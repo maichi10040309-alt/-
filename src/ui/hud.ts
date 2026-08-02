@@ -34,10 +34,17 @@ export function renderTopBar(topBar: HTMLElement, state: GameState | null): void
     topBar.innerHTML = '';
     return;
   }
+  const leading = state.currentMonthPlayerSales >= state.currentMonthRivalSales;
+  const rankChip =
+    state.currentMonthPlayerSales === 0 && state.currentMonthRivalSales === 0
+      ? ''
+      : `<span class="hud-chip ${leading ? 'hud-chip-lead' : 'hud-chip-behind'}">${leading ? '🥇 首位' : '🥈 2位'}(${state.currentMonthPlayerSales} vs ${state.currentMonthRivalSales})</span>`;
+
   topBar.innerHTML = `
     <span class="hud-chip">${state.day}日目</span>
     <span class="hud-chip">${timeLabel(state.timeOfDay)}</span>
     <span class="hud-chip">💰 ${state.money}ベリー</span>
+    ${rankChip}
     <span class="hud-spacer"></span>
     <span class="hud-chip">🏆 コンテスト段階: ${state.contestStageCleared}/5</span>
   `;

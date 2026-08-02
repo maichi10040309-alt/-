@@ -2,9 +2,12 @@ import type { GameState, ShelfItem } from '@/types';
 import { getRecipe, MASTERY_THRESHOLDS, RANK_PRICE_MULTIPLIER, rankLabel } from '@/data/recipes';
 import { addLog, addInventory, getInventoryQty, removeInventory } from './gameState';
 
+// 調整可能パラメータ: 陳列棚に置ける商品数の上限。売り切る/下げる判断を迫るための制約。
+export const SHELF_CAPACITY = 8;
+
 export interface CraftResult {
   ok: boolean;
-  reason?: 'unknown_recipe' | 'not_enough_materials';
+  reason?: 'unknown_recipe' | 'not_enough_materials' | 'shelf_full';
   success?: boolean;
   rank?: string;
   price?: number;
@@ -26,6 +29,10 @@ export function craftSweet(state: GameState, recipeId: string): CraftResult {
 
   if (!canCraft(state, recipeId)) {
     return { ok: false, reason: 'not_enough_materials' };
+  }
+
+  if (state.shelf.length >= SHELF_CAPACITY) {
+    return { ok: false, reason: 'shelf_full' };
   }
 
   // 素材は挑戦時点で消費する(調整可能: 失敗時に半分だけ消費する等の変更も可能)
@@ -63,6 +70,33 @@ export function computeRankIndex(timesMade: number): number {
     if (timesMade >= MASTERY_THRESHOLDS[i]) idx = i;
   }
   return idx;
+}
+
+export function computeFairPrice(recipeId: string, rankIndex: number): number {
+  const recipe = getRecipe(recipeId);
+  return Math.round(recipe.basePrice * RANK_PRICE_MULTIPLIER[rankIndex]);
+}
+
+// 調整可能パラメータ: 適正価格からどこまで値付けを動かせるか(客の値ごろ感に直結)
+export const PRICE_ADJUST_MIN_RATIO = 0.7;
+export const PRICE_ADJUST_MAX_RATIO = 1.6;
+export const PRICE_ADJUST_STEP = 10;
+
+export function priceRangeFor(recipeId: string, rankIndex: number): { min: number; max: number; fair: number } {
+  const fair = computeFairPrice(recipeId, rankIndex);
+  return {
+    min: Math.max(10, Math.round(fair * PRICE_ADJUST_MIN_RATIO)),
+    max: Math.round(fair * PRICE_ADJUST_MAX_RATIO),
+    fair,
+  };
+}
+
+export function adjustShelfPrice(state: GameState, shelfItemId: string, delta: number): boolean {
+  const item = state.shelf.find((i) => i.id === shelfItemId);
+  if (!item) return false;
+  const { min, max } = priceRangeFor(item.recipeId, item.rankIndex);
+  item.price = Math.max(min, Math.min(max, item.price + delta));
+  return true;
 }
 
 export function buyMaterial(state: GameState, materialId: string, price: number, qty: number): boolean {

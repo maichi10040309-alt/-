@@ -308,3 +308,122 @@ button:disabled {
   width: 4px;
   background: #b3446c;
 }
+
+/* ---- モーダル入場アニメーション ---- */
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-pop-in {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-backdrop {
+  animation: modal-fade-in 0.15s ease-out;
+}
+
+.modal-panel {
+  animation: modal-pop-in 0.2s cubic-bezier(0.2, 0.8, 0.3, 1.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop, .modal-panel {
+    animation: none;
+  }
+}
+
+/* ---- アイコン(アバター/スイーツ) ---- */
+.avatar-canvas {
+  flex-shrink: 0;
+  image-rendering: pixelated;
+  background: #fff0f5;
+  border-radius: 10px;
+  border: 2px solid #f0d3de;
+}
+
+.sweet-canvas {
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+
+.price-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: bold;
+  min-width: 64px;
+  text-align: center;
+}
+
+.price-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* ---- HUD ライバル順位チップ ---- */
+.hud-chip-lead {
+  background: #fff3c4cc;
+  border-color: #f4b942;
+  color: #8a5a00;
+}
+
+.hud-chip-behind {
+  background: #ffe0e0cc;
+  border-color: #e0776b;
+  color: #9c3b2e;
+}
+
+/* ---- 日次サマリー ---- */
+.day-summary {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #f3e6ff;
+  border: 2px dashed #c9a6e0;
+  border-radius: 10px;
+}
+
+.day-summary h3 {
+  margin: 0 0 4px;
+}
+
+/* ---- トースト通知 ---- */
+.toast-stack {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 50;
+  align-items: center;
+}
+
+.toast {
+  background: #4a2c2a;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  white-space: nowrap;
+}
+
+.toast-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast-out {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.toast-money { background: #b5842a; }
+.toast-love { background: #c9506f; }
+.toast-success { background: #4a8a5c; }
+.toast-warn { background: #8a4a4a; }

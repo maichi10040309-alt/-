@@ -156,6 +156,20 @@ interface ContestStageDef {
 ランクが `requiredRankIndex` 以上なら基本勝利、僅差判定に軽い乱数を加味。
 第5段階優勝でエンディング(スタッフロール風画面)を表示。
 
+## 8.5. ビジュアル/演出・追加の経営パラメータ(完成度向上パス)
+
+- `src/ui/pixelArt.ts`: キャラ/店舗/スイーツをテンプレートのドットパターン+
+  色差し替え(パレットスワップ)でプロシージャル描画する。本物のドット絵素材が
+  揃うまでの高品質な代替表現。
+- `src/ui/effects.ts`: トースト通知・紙吹雪バーストなどのフィードバック演出。
+- 棚容量制限: `SHELF_CAPACITY = 8`(`src/systems/crafting.ts`)。作りすぎ/売り
+  すぎの判断を迫るための調整可能パラメータ。
+- 価格調整: `PRICE_ADJUST_MIN_RATIO/MAX_RATIO/STEP`(`src/systems/crafting.ts`)。
+  適正価格(ランク別)から±で値付けでき、`purchaseProbability` が価格の
+  乖離度に応じて購買確率を変える。
+- 日次サマリー・ライバル速報: `game.ts` の `daySummaryBlock` と `hud.ts` の
+  首位/2位チップ。数値パラメータの変更は不要だが、収支の見せ方の調整点。
+
 ## 9. セーブデータ — `src/systems/save.ts`
 
 `localStorage` キー `sweets-department-save-v1` に `GameState` 全体を JSON で

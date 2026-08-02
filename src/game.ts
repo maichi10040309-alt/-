@@ -3,9 +3,9 @@ import { createInitialState } from '@/systems/gameState';
 import { saveGame, loadGame, hasSaveData } from '@/systems/save';
 import { timeLabel } from '@/systems/time';
 import { performTalk, performResearch } from '@/systems/actions';
-import { craftSweet, canCraft, buyMaterial } from '@/systems/crafting';
-import { runSalesShift } from '@/systems/sales';
-import { enterContest } from '@/systems/contestSystem';
+import { craftSweet, canCraft, buyMaterial, SHELF_CAPACITY, priceRangeFor, adjustShelfPrice, PRICE_ADJUST_STEP } from '@/systems/crafting';
+import { runSalesShift, priceFeelLabel } from '@/systems/sales';
+import { enterContest, previewWinProbability } from '@/systems/contestSystem';
 import { getPendingEvent, resolveConsultationEvent, resolveMinigameEvent } from '@/systems/eventSystem';
 
 import { CHARACTERS, getCharacter } from '@/data/characters';
@@ -17,6 +17,8 @@ import { CONTEST_STAGES, getContestStage } from '@/data/contest';
 import { initOverlay, openModal, closeModal, closeButtonHtml, escapeHtml } from '@/ui/panels';
 import { renderMap, hitTestMap, CANVAS_W, CANVAS_H } from '@/ui/mapRenderer';
 import { buildHud, renderTopBar } from '@/ui/hud';
+import { drawCharacterAvatar, drawSweetIcon } from '@/ui/pixelArt';
+import { initEffects, showToast, burstConfetti } from '@/ui/effects';
 
 export class Game {
   private state: GameState = createInitialState();
@@ -26,6 +28,7 @@ export class Game {
   private topBar: HTMLElement;
   private bottomBar: HTMLElement;
   private minigameRaf: number | null = null;
+  private dayStartMoney = 0;
 
   constructor(canvas: HTMLCanvasElement, overlay: HTMLElement) {
     this.canvas = canvas;
@@ -40,6 +43,7 @@ export class Game {
 
     this.overlay = overlay;
     initOverlay(overlay);
+    initEffects(overlay);
 
     this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
   }
@@ -60,7 +64,7 @@ export class Game {
   }
 
   // ---------------------------------------------------------
-  // 画面の再描画
+  // 画面の再描画 / アイコン差し込み
   // ---------------------------------------------------------
 
   private render(): void {
@@ -68,8 +72,28 @@ export class Game {
     renderTopBar(this.topBar, this.state);
   }
 
+  /** モーダルHTML内の <canvas data-avatar> / <canvas data-sweet> にドット絵風アイコンを描画する */
+  private hydrateIcons(container: HTMLElement): void {
+    container.querySelectorAll<HTMLCanvasElement>('canvas[data-avatar]').forEach((canvas) => {
+      const charId = canvas.dataset.avatar!;
+      const char = getCharacter(charId);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      drawCharacterAvatar(ctx, 2, 2, canvas.width - 4, charId, char.color);
+    });
+    container.querySelectorAll<HTMLCanvasElement>('canvas[data-sweet]').forEach((canvas) => {
+      const recipeId = canvas.dataset.sweet!;
+      const rankIndex = Number(canvas.dataset.rank ?? 0);
+      const recipe = getRecipe(recipeId);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      drawSweetIcon(ctx, 14, 14, 32, recipe.category, rankIndex);
+    });
+  }
+
   private mountHud(): void {
     this.overlay.innerHTML = '';
+    initEffects(this.overlay);
     this.overlay.appendChild(this.topBar);
     this.overlay.appendChild(this.bottomBar);
     buildHud(this.topBar, this.bottomBar, {
@@ -80,6 +104,7 @@ export class Game {
       onContest: () => this.openContestPanel(),
       onSave: () => this.doSave(),
     });
+    this.dayStartMoney = this.state.money;
     this.render();
   }
 
@@ -117,29 +142,43 @@ export class Game {
   // ---------------------------------------------------------
 
   private doResearch(): void {
+    const dayBefore = this.state.day;
     const result = performResearch(this.state);
     this.render();
+    const dayChanged = this.state.day !== dayBefore;
+
     openModal(`
       <h2>🔬 スイーツ研究</h2>
       <p>今日も研究に励んだ。${result.unlockedRecipeName ? `新レシピ「${escapeHtml(result.unlockedRecipeName)}」を思いついた!` : '地道な積み重ねが力になる。'}</p>
       ${this.logHtml()}
+      ${dayChanged ? this.daySummaryBlock(dayBefore) : ''}
       ${closeButtonHtml()}
     `);
     this.attachCloseHandlers();
-    if (result.timeAdvanced) this.afterTimeAdvance();
+
+    if (result.unlockedRecipeName) showToast(`📖 新レシピ「${result.unlockedRecipeName}」を思いついた!`, 'success');
+    if (result.timeAdvanced) showToast(`🕐 ${timeLabel(this.state.timeOfDay)}になった`, 'info');
+    if (this.state.endingSeen) setTimeout(() => this.showEnding(), 600);
   }
 
   private doSave(): void {
     saveGame(this.state);
+    showToast('💾 セーブしました', 'info');
     openModal(`<h2>💾 セーブ完了</h2><p>ゲームを保存しました。</p>${closeButtonHtml()}`);
     this.attachCloseHandlers();
   }
 
-  private afterTimeAdvance(): void {
-    this.render();
-    if (this.state.endingSeen) {
-      setTimeout(() => this.showEnding(), 400);
-    }
+  private daySummaryBlock(prevDay: number): string {
+    const delta = this.state.money - this.dayStartMoney;
+    const sign = delta >= 0 ? '+' : '';
+    const html = `
+      <div class="day-summary">
+        <h3>🌙 ${prevDay}日目のまとめ</h3>
+        <p>収支: ${sign}${delta}ベリー / 所持金 ${this.state.money}ベリー</p>
+      </div>
+    `;
+    this.dayStartMoney = this.state.money;
+    return html;
   }
 
   private logHtml(): string {
@@ -190,7 +229,7 @@ export class Game {
     const panel = openModal(`
       <h2>${escapeHtml(shop.name)}</h2>
       <div class="card">
-        <div class="swatch" style="background:${char.color}"></div>
+        <canvas class="avatar-canvas" width="64" height="64" data-avatar="${char.id}"></canvas>
         <div class="info">
           <div class="title">${escapeHtml(char.name)}(${escapeHtml(char.personality)})</div>
           <div class="sub">好感度 Lv${affinity.level} / 5 &nbsp; ${'♥'.repeat(affinity.level)}${'♡'.repeat(5 - affinity.level)}</div>
@@ -204,14 +243,32 @@ export class Game {
       ${materialsHtml}
       ${closeButtonHtml()}
     `);
+    this.hydrateIcons(panel);
 
     panel.querySelector('#btn-talk')!.addEventListener('click', () => {
+      const dayBefore = this.state.day;
       const result = performTalk(this.state, char.id);
       panel.querySelector('#talk-line')!.textContent = `「${result.greeting}」`;
       this.render();
+
+      if (result.leveledUp) showToast(`💖 ${char.name}の好感度がLv${result.newLevel}になった!`, 'love');
+      if (result.eventUnlocked) showToast(`✨ ${char.name}が話したいことがあるみたい`, 'info');
+
       if (result.timeAdvanced) {
-        this.afterTimeAdvance();
-        closeModal();
+        showToast(`🕐 ${timeLabel(this.state.timeOfDay)}になった`, 'info');
+        const dayChanged = this.state.day !== dayBefore;
+        if (dayChanged) {
+          openModal(`
+            <h2>${escapeHtml(char.name)}と話した</h2>
+            <p>「${escapeHtml(result.greeting)}」</p>
+            ${this.daySummaryBlock(dayBefore)}
+            ${closeButtonHtml('おやすみ')}
+          `);
+          this.attachCloseHandlers();
+        } else {
+          closeModal();
+        }
+        if (this.state.endingSeen) setTimeout(() => this.showEnding(), 600);
         return;
       }
       // 好感度・イベント状況が変わった可能性があるのでパネルを開き直す
@@ -228,10 +285,11 @@ export class Game {
         const materialId = btn.dataset.buy!;
         const price = Number(btn.dataset.price);
         if (buyMaterial(this.state, materialId, price, 1)) {
+          showToast(`🛒 ${getMaterial(materialId).name}を購入した`, 'money');
           this.render();
           this.openShop(shopId);
         } else {
-          alert('所持金が足りません。');
+          showToast('😢 所持金が足りません', 'warn');
         }
       });
     });
@@ -252,7 +310,10 @@ export class Game {
       const choices = ['じっくり話を聞いてあげる', '元気になる言葉をかける', '一緒に解決策を考える'];
       const panel = openModal(`
         <h2>💬 ${escapeHtml(pending.templateTitle)}</h2>
-        <p>${escapeHtml(char.name)}「${escapeHtml(pending.templateDescription)}」</p>
+        <div class="row">
+          <canvas class="avatar-canvas" width="56" height="56" data-avatar="${char.id}"></canvas>
+          <p style="flex:1">${escapeHtml(char.name)}「${escapeHtml(pending.templateDescription)}」</p>
+        </div>
         <p class="sub">どう返事する?一番寄り添えそうな選択肢を選ぼう。</p>
         <div class="list">
           ${choices.map((c, i) => `<button data-choice="${i}" style="text-align:left">${escapeHtml(c)}</button>`).join('')}
@@ -260,12 +321,14 @@ export class Game {
         <div id="event-result"></div>
         ${closeButtonHtml('とじる')}
       `);
+      this.hydrateIcons(panel);
       panel.querySelectorAll<HTMLButtonElement>('[data-choice]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const idx = Number(btn.dataset.choice);
           const grade = resolveConsultationEvent(this.state, characterId, idx);
           panel.querySelectorAll('[data-choice]').forEach((b) => b.setAttribute('disabled', 'true'));
           panel.querySelector('#event-result')!.innerHTML = this.eventGradeMessage(grade);
+          this.handleEventGradeEffects(grade);
           this.render();
         });
       });
@@ -276,13 +339,17 @@ export class Game {
     // minigame
     const panel = openModal(`
       <h2>🧁 ${escapeHtml(pending.templateTitle)}</h2>
-      <p>${escapeHtml(char.name)}「${escapeHtml(pending.templateDescription)}」</p>
+      <div class="row">
+        <canvas class="avatar-canvas" width="56" height="56" data-avatar="${char.id}"></canvas>
+        <p style="flex:1">${escapeHtml(char.name)}「${escapeHtml(pending.templateDescription)}」</p>
+      </div>
       <p class="sub">カーソルがちょうど良い位置(色のついた枠)に来たタイミングでクリックしてね!</p>
       <div class="minigame-bar"><div class="minigame-target"></div><div class="minigame-cursor" id="mg-cursor"></div></div>
       <div class="row"><button id="mg-click">クリック!</button></div>
       <div id="event-result"></div>
       ${closeButtonHtml('とじる')}
     `);
+    this.hydrateIcons(panel);
 
     let t = 0;
     const cursor = panel.querySelector<HTMLElement>('#mg-cursor')!;
@@ -301,10 +368,22 @@ export class Game {
       const grade = resolveMinigameEvent(this.state, characterId, hitValue);
       (panel.querySelector('#mg-click') as HTMLButtonElement).setAttribute('disabled', 'true');
       panel.querySelector('#event-result')!.innerHTML = this.eventGradeMessage(grade);
+      this.handleEventGradeEffects(grade);
       this.render();
     });
 
     this.attachCloseHandlers();
+  }
+
+  private handleEventGradeEffects(grade: 'full' | 'partial' | 'fail'): void {
+    if (grade === 'full') {
+      showToast('🎉 大成功!素材・レシピをたくさん手に入れた!', 'success');
+      burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H / 2);
+    } else if (grade === 'partial') {
+      showToast('まずまずの結果。ちょっとした報酬をもらえた。', 'info');
+    } else {
+      showToast('うまくいかなかった……また今度挑戦しよう。', 'warn');
+    }
   }
 
   private stopMinigameLoop(): void {
@@ -326,25 +405,30 @@ export class Game {
 
   private openCraftPanel(): void {
     const known = RECIPES.filter((r) => this.state.knownRecipeIds.includes(r.id));
+    const shelfFull = this.state.shelf.length >= SHELF_CAPACITY;
     const panel = openModal(`
       <h2>🍰 スイーツ調合</h2>
+      <p class="sub">陳列棚: ${this.state.shelf.length} / ${SHELF_CAPACITY}点 ${shelfFull ? '(満杯!自分の店で商品を整理しよう)' : ''}</p>
       <div class="list">
         ${known
           .map((r) => {
-            const ok = canCraft(this.state, r.id);
             const mastery = this.state.recipeMastery[r.id];
+            const rankIndex = mastery?.rankIndex ?? 0;
+            const ok = canCraft(this.state, r.id) && !shelfFull;
             const rankText = mastery ? `現在${rankLabel(mastery.rankIndex)}ランク(${mastery.timesMade}回成功)` : 'まだ未作成';
             const ingredientsText = r.ingredients
               .map((ing) => `${getMaterial(ing.materialId).name}×${ing.qty}`)
               .join(' / ');
+            const label = shelfFull ? '棚が満杯' : ok ? '作る' : '素材不足';
             return `
             <div class="card" style="align-items:flex-start">
+              <canvas class="sweet-canvas" width="60" height="60" data-sweet="${r.id}" data-rank="${rankIndex}"></canvas>
               <div class="info">
                 <div class="title">${escapeHtml(r.name)} <span class="sub">(成功率${Math.round(r.baseSuccessRate * 100)}%)</span></div>
                 <div class="sub">${escapeHtml(ingredientsText)}</div>
                 <div class="sub">${escapeHtml(rankText)}</div>
               </div>
-              <button data-craft="${r.id}" ${ok ? '' : 'disabled'}>${ok ? '作る' : '素材不足'}</button>
+              <button data-craft="${r.id}" ${ok ? '' : 'disabled'}>${label}</button>
             </div>`;
           })
           .join('')}
@@ -352,6 +436,7 @@ export class Game {
       <div id="craft-result"></div>
       ${closeButtonHtml()}
     `);
+    this.hydrateIcons(panel);
 
     panel.querySelectorAll<HTMLButtonElement>('[data-craft]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -359,11 +444,16 @@ export class Game {
         const result = craftSweet(this.state, recipeId);
         const resultBox = panel.querySelector('#craft-result')!;
         if (!result.ok) {
-          resultBox.innerHTML = `<p>作成できませんでした。</p>`;
+          const msg = result.reason === 'shelf_full' ? '棚がいっぱいで並べられません。' : '作成できませんでした。';
+          resultBox.innerHTML = `<p>${msg}</p>`;
         } else if (result.success) {
           resultBox.innerHTML = `<p>🎉 ${escapeHtml(getRecipe(recipeId).name)}が完成!<span class="rank-badge">${result.rank}</span> ${result.price}ベリーで棚に並べた!</p>`;
+          showToast(`🎉 ${getRecipe(recipeId).name}(${result.rank})が完成!`, 'success');
+          const mastery = this.state.recipeMastery[recipeId];
+          if (mastery && mastery.rankIndex >= 5) burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H / 2);
         } else {
           resultBox.innerHTML = `<p>😢 失敗してしまった……素材が無駄になった。</p>`;
+          showToast('😢 調合に失敗した……', 'warn');
         }
         this.render();
         this.openCraftPanel();
@@ -410,14 +500,25 @@ export class Game {
       <p>今月の売上: ${this.state.currentMonthPlayerSales}ベリー(ライバル: ${this.state.currentMonthRivalSales}ベリー)</p>
       <div class="row"><button id="btn-shift">接客する</button></div>
       <div id="shift-result"></div>
-      <h3>🧁 陳列棚(${this.state.shelf.length}点)</h3>
+      <h3>🧁 陳列棚(${this.state.shelf.length} / ${SHELF_CAPACITY}点)</h3>
       <div class="list">
         ${
           this.state.shelf
             .map((item) => {
               const r = getRecipe(item.recipeId);
+              const range = priceRangeFor(item.recipeId, item.rankIndex);
+              const feel = priceFeelLabel(item.price, range.fair);
               return `<div class="card">
-                <div class="info"><div class="title">${escapeHtml(r.name)} <span class="rank-badge">${rankLabel(item.rankIndex)}</span></div><div class="sub">${item.price}ベリー</div></div>
+                <canvas class="sweet-canvas" width="60" height="60" data-sweet="${item.recipeId}" data-rank="${item.rankIndex}"></canvas>
+                <div class="info">
+                  <div class="title">${escapeHtml(r.name)} <span class="rank-badge">${rankLabel(item.rankIndex)}</span></div>
+                  <div class="row" style="gap:4px">
+                    <button class="secondary price-btn" data-price-down="${item.id}">-${PRICE_ADJUST_STEP}</button>
+                    <span class="price-value">${item.price}ベリー</span>
+                    <button class="secondary price-btn" data-price-up="${item.id}">+${PRICE_ADJUST_STEP}</button>
+                  </div>
+                  <div class="sub">${feel}(適正: ${range.fair}ベリー)</div>
+                </div>
                 <button class="danger" data-remove="${item.id}">下げる</button>
               </div>`;
             })
@@ -427,11 +528,14 @@ export class Game {
       ${this.monthlyHistoryHtml()}
       ${closeButtonHtml()}
     `);
+    this.hydrateIcons(panel);
 
     panel.querySelector('#btn-shift')!.addEventListener('click', () => {
       const result = runSalesShift(this.state);
       panel.querySelector('#shift-result')!.innerHTML = `<p>${result.customers}人来店 / ${result.itemsSold}個販売 / ${result.revenue}ベリーの売上</p>`;
       this.render();
+      if (result.itemsSold > 0) showToast(`💰 +${result.revenue}ベリーの売上!`, 'money');
+      if (result.itemsSold >= 3) burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H * 0.3);
       this.openPlayerShop();
     });
 
@@ -440,6 +544,19 @@ export class Game {
         const id = btn.dataset.remove!;
         this.state.shelf = this.state.shelf.filter((i) => i.id !== id);
         this.render();
+        this.openPlayerShop();
+      });
+    });
+
+    panel.querySelectorAll<HTMLButtonElement>('[data-price-up]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        adjustShelfPrice(this.state, btn.dataset.priceUp!, PRICE_ADJUST_STEP);
+        this.openPlayerShop();
+      });
+    });
+    panel.querySelectorAll<HTMLButtonElement>('[data-price-down]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        adjustShelfPrice(this.state, btn.dataset.priceDown!, -PRICE_ADJUST_STEP);
         this.openPlayerShop();
       });
     });
@@ -479,7 +596,15 @@ export class Game {
                  this.state.shelf
                    .map((item) => {
                      const r = getRecipe(item.recipeId);
-                     return `<div class="card"><div class="info"><div class="title">${escapeHtml(r.name)} <span class="rank-badge">${rankLabel(item.rankIndex)}</span></div></div><button data-enter="${item.id}">出品する</button></div>`;
+                     const prob = Math.round(previewWinProbability(item.rankIndex, stageDef.requiredRankIndex) * 100);
+                     return `<div class="card">
+                       <canvas class="sweet-canvas" width="60" height="60" data-sweet="${item.recipeId}" data-rank="${item.rankIndex}"></canvas>
+                       <div class="info">
+                         <div class="title">${escapeHtml(r.name)} <span class="rank-badge">${rankLabel(item.rankIndex)}</span></div>
+                         <div class="sub">予想勝率: 約${prob}%</div>
+                       </div>
+                       <button data-enter="${item.id}">出品する</button>
+                     </div>`;
                    })
                    .join('') || '<p>出品できるスイーツが棚にありません。調合して用意しよう。</p>'
                }
@@ -489,6 +614,7 @@ export class Game {
       <div id="contest-result"></div>
       ${closeButtonHtml()}
     `);
+    this.hydrateIcons(panel);
 
     panel.querySelectorAll<HTMLButtonElement>('[data-enter]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -497,8 +623,13 @@ export class Game {
         const box = panel.querySelector('#contest-result')!;
         if (!result.ok) {
           box.innerHTML = `<p>エントリーできませんでした(${result.reason})。</p>`;
+        } else if (result.won) {
+          box.innerHTML = `<p>🎉優勝しました!</p>`;
+          showToast(`🏆 ${stageDef ? stageDef.name : 'コンテスト'}優勝!`, 'success');
+          burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H / 2);
         } else {
-          box.innerHTML = `<p>${result.won ? '🎉優勝しました!' : '惜しくも敗退……'}</p>`;
+          box.innerHTML = `<p>惜しくも敗退……</p>`;
+          showToast('惜しくも敗退……また挑戦しよう', 'warn');
         }
         this.render();
         if (this.state.endingSeen) {

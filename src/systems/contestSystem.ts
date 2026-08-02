@@ -11,7 +11,7 @@ export interface ContestResult {
 }
 
 /** ランクが要求水準を満たしているかで勝率を決める簡易判定式(調整可能) */
-function winProbability(itemRankIndex: number, requiredRankIndex: number): number {
+export function previewWinProbability(itemRankIndex: number, requiredRankIndex: number): number {
   const margin = itemRankIndex - requiredRankIndex;
   if (margin >= 0) return Math.min(0.95, 0.7 + margin * 0.08);
   return Math.max(0.05, 0.25 + margin * 0.1);
@@ -37,7 +37,7 @@ export function enterContest(state: GameState, shelfItemId: string): ContestResu
   state.money -= stageDef.entryFee;
   state.shelf.splice(itemIdx, 1);
 
-  const prob = winProbability(item.rankIndex, stageDef.requiredRankIndex);
+  const prob = previewWinProbability(item.rankIndex, stageDef.requiredRankIndex);
   const won = Math.random() < prob;
 
   addLog(state, `【${stageDef.name}】${recipe.name}(${rankLabel(item.rankIndex)})でエントリー……`);
