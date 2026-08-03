@@ -337,7 +337,10 @@ button:disabled {
 /* ---- アイコン(アバター/スイーツ) ---- */
 .avatar-canvas {
   flex-shrink: 0;
-  image-rendering: pixelated;
+  width: 64px;
+  height: 88px;
+  object-fit: contain;
+  object-position: bottom center;
   background: #fff0f5;
   border-radius: 10px;
   border: 2px solid #f0d3de;
@@ -465,8 +468,8 @@ button:disabled {
 
 .dialogue-box .dlg-portrait {
   flex-shrink: 0;
-  width: 72px;
-  height: 72px;
+  width: 84px;
+  height: 120px;
 }
 
 .dialogue-box .dlg-body {

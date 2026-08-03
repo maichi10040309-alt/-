@@ -9,16 +9,24 @@ import { enterContest, previewWinProbability } from '@/systems/contestSystem';
 import { getPendingEvent, resolveConsultationEvent, resolveMinigameEvent } from '@/systems/eventSystem';
 
 import { CHARACTERS, getCharacter } from '@/data/characters';
-import { getShop, getShopByCharacter, FLOORS, PLAYER_HOME_FLOOR, getShopsOnFloor } from '@/data/shops';
+import { getShop, getShopByCharacter, PLAYER_SHOP, FLOORS, PLAYER_HOME_FLOOR, getShopsOnFloor } from '@/data/shops';
 import { MATERIALS, getMaterial } from '@/data/materials';
 import { RECIPES, getRecipe, rankLabel } from '@/data/recipes';
 import { CONTEST_STAGES, getContestStage } from '@/data/contest';
+import { CHARACTER_PORTRAITS } from '@/data/imageAssets';
 
 import { initOverlay, openModal, closeModal, closeButtonHtml, escapeHtml } from '@/ui/panels';
 import { renderMap, hitTestMap, getStandingSpot, PLAYER_HOME_SPOT, ELEVATOR_SPOT, CANVAS_W, CANVAS_H, type PlayerSprite } from '@/ui/mapRenderer';
 import { buildHud, renderTopBar } from '@/ui/hud';
-import { drawCharacterAvatar, drawSweetIcon } from '@/ui/pixelArt';
+import { drawSweetIcon } from '@/ui/pixelArt';
 import { initEffects, showToast, burstConfetti, playElevatorTransition } from '@/ui/effects';
+
+// 調整可能パラメータ: 本屋でレシピを購入するときの価格倍率(基本価格に対して)
+const RECIPE_BOOK_PRICE_MULTIPLIER = 3;
+
+function portraitHtml(portraitKey: string, name: string, extraClass = ''): string {
+  return `<img class="avatar-canvas ${extraClass}" src="${CHARACTER_PORTRAITS[portraitKey]}" alt="${escapeHtml(name)}">`;
+}
 
 const PLAYER_SPEED = 260; // 論理キャンバス座標 px/秒
 
@@ -165,16 +173,8 @@ export class Game {
     renderTopBar(this.topBar, this.state, this.currentFloor);
   }
 
-  /** モーダル/会話ボックスHTML内の <canvas data-avatar> / <canvas data-sweet> にアイコンを描画する */
+  /** モーダル/会話ボックスHTML内の <canvas data-sweet> にランク付きスイーツアイコンを描画する */
   private hydrateIcons(container: HTMLElement): void {
-    container.querySelectorAll<HTMLCanvasElement>('canvas[data-avatar]').forEach((canvas) => {
-      const charId = canvas.dataset.avatar!;
-      const char = getCharacter(charId);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawCharacterAvatar(ctx, 2, 2, canvas.width - 4, charId, char.color);
-    });
     container.querySelectorAll<HTMLCanvasElement>('canvas[data-sweet]').forEach((canvas) => {
       const recipeId = canvas.dataset.sweet!;
       const rankIndex = Number(canvas.dataset.rank ?? 0);
@@ -260,7 +260,7 @@ export class Game {
     screen.id = 'title-screen';
     screen.innerHTML = `
       <h1>🍰 スイーツデパート物語 🍩</h1>
-      <p>デパートで自分のお店を育てながら、18人の店主と仲良くなろう。</p>
+      <p>いちごケーキ店を営むストロベリーになって、デパートの17人の店主と仲良くなろう。</p>
       <p class="sub">マップをクリックすると、その場所まで歩いていきます。</p>
       <div class="row" style="justify-content:center">
         <button id="btn-new-game">はじめから</button>
@@ -355,15 +355,15 @@ export class Game {
   // キャラクター会話(マップ下部のビジュアルノベル風ダイアログ)
   // ---------------------------------------------------------
 
-  private openCharacterDialogue(shopId: string, view: 'greet' | 'materials' = 'greet'): void {
+  private openCharacterDialogue(shopId: string, view: 'greet' | 'materials' | 'books' = 'greet'): void {
     const shop = getShop(shopId);
     const char = getCharacter(shop.characterId);
     const affinity = this.state.characterAffinity[char.id];
     const pending = getPendingEvent(this.state, char.id);
+    const sold = MATERIALS.filter((m) => m.soldAtShopId === shop.id);
 
     let bodyHtml: string;
     if (view === 'materials') {
-      const sold = MATERIALS.filter((m) => m.soldAtShopId === shop.id);
       bodyHtml = `
         <div class="dlg-name">🛒 ${escapeHtml(shop.name)}の品揃え</div>
         <div class="dlg-material-list">
@@ -381,6 +381,27 @@ export class Game {
         </div>
         <div class="dlg-actions"><button class="secondary" id="dlg-back">戻る</button></div>
       `;
+    } else if (view === 'books') {
+      const unknown = RECIPES.filter((r) => !this.state.knownRecipeIds.includes(r.id));
+      bodyHtml = `
+        <div class="dlg-name">📖 ${escapeHtml(shop.name)}のレシピ本</div>
+        <div class="dlg-material-list">
+          ${
+            unknown
+              .map((r) => {
+                const price = r.basePrice * RECIPE_BOOK_PRICE_MULTIPLIER;
+                return `
+            <div class="dlg-material">
+              <span class="dlg-material-name">${escapeHtml(r.name)}</span>
+              <span class="sub">${price}ベリー</span>
+              <button data-buy-recipe="${r.id}" data-price="${price}">購入</button>
+            </div>`;
+              })
+              .join('') || '<p class="sub">今のところ、これ以上のレシピ本はないみたい。</p>'
+          }
+        </div>
+        <div class="dlg-actions"><button class="secondary" id="dlg-back">戻る</button></div>
+      `;
     } else {
       bodyHtml = `
         <div class="dlg-name">${escapeHtml(char.name)} <span class="dlg-sub">好感度 Lv${affinity.level}/5 ${'♥'.repeat(affinity.level)}${'♡'.repeat(5 - affinity.level)}</span></div>
@@ -388,14 +409,15 @@ export class Game {
         <div class="dlg-actions">
           <button id="dlg-talk">話しかける</button>
           ${pending ? `<button id="dlg-event">✨ ${escapeHtml(pending.templateTitle)}</button>` : ''}
-          ${shop.type === 'material' ? `<button class="secondary" id="dlg-shop">🛒 素材を見る</button>` : ''}
+          ${sold.length > 0 ? `<button class="secondary" id="dlg-shop">🛒 素材を見る</button>` : ''}
+          ${shop.type === 'bookstore' ? `<button class="secondary" id="dlg-books">📖 レシピ本を見る</button>` : ''}
           <button class="secondary" id="dlg-close">立ち去る</button>
         </div>
       `;
     }
 
     const box = this.showDialogueHtml(`
-      <canvas class="avatar-canvas dlg-portrait" width="72" height="72" data-avatar="${char.id}"></canvas>
+      ${portraitHtml(char.portrait, char.name, 'dlg-portrait')}
       <div class="dlg-body">${bodyHtml}</div>
     `);
     this.hydrateIcons(box);
@@ -412,6 +434,25 @@ export class Game {
             showToast('😢 所持金が足りません', 'warn');
           }
           this.openCharacterDialogue(shopId, 'materials');
+        });
+      });
+      return;
+    }
+
+    if (view === 'books') {
+      box.querySelector('#dlg-back')!.addEventListener('click', () => this.openCharacterDialogue(shopId, 'greet'));
+      box.querySelectorAll<HTMLButtonElement>('[data-buy-recipe]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const recipeId = btn.dataset.buyRecipe!;
+          const price = Number(btn.dataset.price);
+          if (this.state.money >= price) {
+            this.state.money -= price;
+            this.state.knownRecipeIds.push(recipeId);
+            showToast(`📖 新レシピ「${getRecipe(recipeId).name}」を購入した!`, 'success');
+          } else {
+            showToast('😢 所持金が足りません', 'warn');
+          }
+          this.openCharacterDialogue(shopId, 'books');
         });
       });
       return;
@@ -451,6 +492,9 @@ export class Game {
     const shopBtn = box.querySelector('#dlg-shop');
     if (shopBtn) shopBtn.addEventListener('click', () => this.openCharacterDialogue(shopId, 'materials'));
 
+    const booksBtn = box.querySelector('#dlg-books');
+    if (booksBtn) booksBtn.addEventListener('click', () => this.openCharacterDialogue(shopId, 'books'));
+
     box.querySelector('#dlg-close')!.addEventListener('click', () => this.hideDialogue());
   }
 
@@ -468,7 +512,7 @@ export class Game {
       const panel = openModal(`
         <h2>💬 ${escapeHtml(pending.templateTitle)}</h2>
         <div class="row">
-          <canvas class="avatar-canvas" width="56" height="56" data-avatar="${char.id}"></canvas>
+          ${portraitHtml(char.portrait, char.name)}
           <p style="flex:1">${escapeHtml(char.name)}「${escapeHtml(pending.templateDescription)}」</p>
         </div>
         <p class="sub">どう返事する?一番寄り添えそうな選択肢を選ぼう。</p>
@@ -497,7 +541,7 @@ export class Game {
     const panel = openModal(`
       <h2>🧁 ${escapeHtml(pending.templateTitle)}</h2>
       <div class="row">
-        <canvas class="avatar-canvas" width="56" height="56" data-avatar="${char.id}"></canvas>
+        ${portraitHtml(char.portrait, char.name)}
         <p style="flex:1">${escapeHtml(char.name)}「${escapeHtml(pending.templateDescription)}」</p>
       </div>
       <p class="sub">カーソルがちょうど良い位置(色のついた枠)に来たタイミングでクリックしてね!</p>
@@ -713,8 +757,11 @@ export class Game {
 
   private openPlayerShop(): void {
     const panel = openModal(`
-      <h2>🏪 あなたのお店</h2>
-      <p>今月の売上: ${this.state.currentMonthPlayerSales}ベリー(ライバル: ${this.state.currentMonthRivalSales}ベリー)</p>
+      <h2>🏪 ${escapeHtml(PLAYER_SHOP.name)}</h2>
+      <div class="row">
+        ${portraitHtml(PLAYER_SHOP.portrait, 'ストロベリー')}
+        <p style="flex:1">今月の売上: ${this.state.currentMonthPlayerSales}ベリー(ライバル: ${this.state.currentMonthRivalSales}ベリー)</p>
+      </div>
       <div class="row"><button id="btn-shift">接客する</button></div>
       <div id="shift-result"></div>
       <h3>🧁 陳列棚(${this.state.shelf.length} / ${SHELF_CAPACITY}点)</h3>
@@ -870,9 +917,9 @@ export class Game {
     screen.innerHTML = `
       <h1>🎉 世界スイーツグランプリ優勝 🎉</h1>
       <p>あなたの作るスイーツは、デパート中の、そして世界中の人々を笑顔にしました。</p>
-      <p>18人の店主たちとの絆も、たくさんの美味しいスイーツも、すべてあなたの努力の証です。</p>
+      <p>17人の店主たちとの絆も、たくさんの美味しいスイーツも、すべてあなたの努力の証です。</p>
       <p style="opacity:0.7">-- STAFF ROLL --</p>
-      <p style="opacity:0.7">${CHARACTERS.map((c) => c.name).join(' ・ ')}</p>
+      <p style="opacity:0.7">ストロベリー(あなた) ・ ${CHARACTERS.map((c) => c.name).join(' ・ ')}</p>
       <button id="btn-back-title">タイトルへ戻る</button>
     `;
     this.overlay.appendChild(screen);

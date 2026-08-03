@@ -10,27 +10,27 @@ function greetings(name: string, topic: string): [string, string, string, string
   ];
 }
 
-// 18人分、店舗配置・基本会話・好感度枠組みを最初から実装。
-// 個別イベントシナリオは events.ts の汎用テンプレートを割り当て、後から差し替える。
+// 17人のNPC。プレイヤー(ストロベリー、いちごケーキ店主)は別枠で管理する。
+// 好感度・イベントの枠組みは最初から全員分実装し、個別イベントシナリオは
+// events.ts の汎用テンプレートを割り当てて後から差し替える方針。
 export const CHARACTERS: CharacterDef[] = [
-  { id: 'char_01', name: 'ミント', shopId: 'shop_01', personality: 'ふんわり優しいケーキ職人', favoriteMaterialId: 'mat_strawberry', color: '#ffb6c1', portrait: '/portraits/char_01.png', greetings: greetings('ミント', 'ケーキのデコレーション') },
-  { id: 'char_02', name: 'ルミナ', shopId: 'shop_02', personality: 'きっちり者の粉商人', favoriteMaterialId: 'mat_flour', color: '#e9d8a6', portrait: '/portraits/char_02.png', greetings: greetings('ルミナ', '小麦の産地') },
-  { id: 'char_03', name: 'ソレイユ', shopId: 'shop_03', personality: '詩を書くクッキー職人', favoriteMaterialId: 'mat_butter', color: '#ffd166', portrait: '/portraits/char_03.png', greetings: greetings('ソレイユ', '新作クッキーの詩') },
-  { id: 'char_04', name: 'パティ', shopId: 'shop_04', personality: '牧場育ちの元気な酪農娘', favoriteMaterialId: 'mat_milk', color: '#caf0f8', portrait: '/portraits/char_04.png', greetings: greetings('パティ', '牧場の朝') },
-  { id: 'char_05', name: 'キャンディ', shopId: 'shop_05', personality: 'プリン一筋の職人気質', favoriteMaterialId: 'mat_egg', color: '#fff3b0', portrait: '/portraits/char_05.png', greetings: greetings('キャンディ', 'プリンの黄金比') },
-  { id: 'char_06', name: 'ベリー', shopId: 'shop_06', personality: '果樹園を営む天真爛漫な少女', favoriteMaterialId: 'mat_apple', color: '#ef476f', portrait: '/portraits/char_06.png', greetings: greetings('ベリー', '今年の果物の出来') },
-  { id: 'char_07', name: 'ショコラ', shopId: 'shop_07', personality: 'クールなチョコレート職人', favoriteMaterialId: 'mat_chocolate', color: '#6f4518', portrait: '/portraits/char_07.png', greetings: greetings('ショコラ', 'カカオの発酵') },
-  { id: 'char_08', name: 'ハニー', shopId: 'shop_08', personality: '養蜂を営む物静かな青年', favoriteMaterialId: 'mat_honey', color: '#f4a300', portrait: '/portraits/char_08.png', greetings: greetings('ハニー', '蜂たちの様子') },
-  { id: 'char_09', name: 'マカロン', shopId: 'shop_09', personality: '甘い物に目がないムードメーカー', favoriteMaterialId: 'mat_sugar', color: '#ffc6ff', portrait: '/portraits/char_09.png', greetings: greetings('マカロン', '新作キャンディ') },
-  { id: 'char_10', name: 'バニラ', shopId: 'shop_10', personality: '香りにこだわる商人', favoriteMaterialId: 'mat_vanilla', color: '#3d2b1f', portrait: '/portraits/char_10.png', greetings: greetings('バニラ', '香料の仕入れ') },
-  { id: 'char_11', name: 'アップル', shopId: 'shop_11', personality: 'パイ作り一筋の頑固者', favoriteMaterialId: 'mat_apple', color: '#e63946', portrait: '/portraits/char_11.png', greetings: greetings('アップル', 'パイ生地のコツ') },
-  { id: 'char_12', name: 'クリーム', shopId: 'shop_12', personality: 'ふわふわした癒し系', favoriteMaterialId: 'mat_cream', color: '#fffaf0', portrait: '/portraits/char_12.png', greetings: greetings('クリーム', '泡立て加減') },
-  { id: 'char_13', name: 'タルティーヌ', shopId: 'shop_13', personality: '職人気質のタルト焼き', favoriteMaterialId: 'mat_lemon', color: '#fff275', portrait: '/portraits/char_13.png', greetings: greetings('タルティーヌ', 'タルト生地の配合') },
-  { id: 'char_14', name: 'マチャ', shopId: 'shop_14', personality: '茶道にも通じる物知り', favoriteMaterialId: 'mat_matcha', color: '#6a994e', portrait: '/portraits/char_14.png', greetings: greetings('マチャ', '茶葉の挽き方') },
-  { id: 'char_15', name: 'ロレーヌ', shopId: 'shop_15', personality: '旅好きなロールケーキ職人', favoriteMaterialId: 'mat_cream', color: '#bde0fe', portrait: '/portraits/char_15.png', greetings: greetings('ロレーヌ', '旅先で見た景色') },
-  { id: 'char_16', name: 'ノヴァ', shopId: 'shop_16', personality: '珍しい素材を集める謎めいた人', favoriteMaterialId: 'mat_star_sugar', color: '#9d4edd', portrait: '/portraits/char_16.png', greetings: greetings('ノヴァ', '不思議な素材の噂') },
-  { id: 'char_17', name: 'ジェラート', shopId: 'shop_17', personality: '陽気なアイス職人', favoriteMaterialId: 'mat_vanilla', color: '#90e0ef', portrait: '/portraits/char_17.png', greetings: greetings('ジェラート', '今日のおすすめフレーバー') },
-  { id: 'char_18', name: 'ステラ', shopId: 'shop_18', personality: '星読みが得意な占い師気質', favoriteMaterialId: 'mat_star_sugar', color: '#ffd6ff', portrait: '/portraits/char_18.png', greetings: greetings('ステラ', '今夜の星模様') },
+  { id: 'white', name: 'ホワイト', shopId: 'shop_white', personality: 'おっとりしたお嬢様', favoriteMaterialId: 'mat_cream', color: '#a8cbe8', portrait: 'white', greetings: greetings('ホワイト', '高級ケーキの飾り付け') },
+  { id: 'bitter', name: 'ビター', shopId: 'shop_bitter', personality: 'クールで頭脳派', favoriteMaterialId: 'mat_chocolate', color: '#4a3626', portrait: 'bitter', greetings: greetings('ビター', 'カカオの配合') },
+  { id: 'milk', name: 'ミルク', shopId: 'shop_milk', personality: 'やさしく包容力がある男の子', favoriteMaterialId: 'mat_milk', color: '#e0b45a', portrait: 'milk', greetings: greetings('ミルク', '焼きたてパンの香り') },
+  { id: 'matcha', name: '抹茶', shopId: 'shop_matcha', personality: '真面目で控えめな女の子', favoriteMaterialId: 'mat_matcha', color: '#7a9a5a', portrait: 'matcha', greetings: greetings('抹茶', '和菓子と抹茶の相性') },
+  { id: 'crunch', name: 'クランチ', shopId: 'shop_crunch', personality: 'クッキー作りが得意な几帳面な男の子', favoriteMaterialId: 'mat_flour', color: '#8a5a3c', portrait: 'crunch', greetings: greetings('クランチ', '新作クッキーの配合') },
+  { id: 'marron', name: 'マロン', shopId: 'shop_marron', personality: '田舎育ちの素朴な女の子。チーズも大好き', favoriteMaterialId: 'mat_almond', color: '#7a4a35', portrait: 'marron', greetings: greetings('マロン', 'モンブランの絞り方') },
+  { id: 'champagne', name: 'シャンパン', shopId: 'shop_champagne', personality: 'お金持ちでキザな男の子', favoriteMaterialId: 'mat_vanilla', color: '#cfa855', portrait: 'champagne', greetings: greetings('シャンパン', '記念日ケーキの注文') },
+  { id: 'peche', name: 'ペシェ', shopId: 'shop_peche', personality: '桃が大好きな女の子', favoriteMaterialId: 'mat_honey', color: '#f0a8a8', portrait: 'peche', greetings: greetings('ペシェ', '今年の桃の出来') },
+  { id: 'pomme', name: 'ボンム', shopId: 'shop_pomme', personality: '恋する女の子', favoriteMaterialId: 'mat_apple', color: '#d8452f', portrait: 'pomme', greetings: greetings('ボンム', '気になるあの人のこと') },
+  { id: 'almond', name: 'アーモンド', shopId: 'shop_almond', personality: '読書が大好きな知的な男の子。焼き菓子も得意', favoriteMaterialId: 'mat_almond', color: '#6a4a30', portrait: 'almond', greetings: greetings('アーモンド', '最近読んだレシピ本') },
+  { id: 'honey', name: 'ハニー', shopId: 'shop_honey', personality: 'はちみつが大好きな明るい女の子', favoriteMaterialId: 'mat_honey', color: '#e8b23a', portrait: 'honey', greetings: greetings('ハニー', '蜂たちの様子') },
+  { id: 'caramel', name: 'キャラメル', shopId: 'shop_caramel', personality: '甘いものが大好きな女の子', favoriteMaterialId: 'mat_sugar', color: '#a8703c', portrait: 'caramel', greetings: greetings('キャラメル', 'プリンの焦がし加減') },
+  { id: 'blueberry', name: 'ブルーベリー', shopId: 'shop_blueberry', personality: '落ち着いた性格の女の子', favoriteMaterialId: 'mat_strawberry', color: '#8a6ab5', portrait: 'blueberry', greetings: greetings('ブルーベリー', 'ベリータルトの配合') },
+  { id: 'maple', name: 'メープル', shopId: 'shop_maple', personality: '元気いっぱいの女の子。パンケーキとシロップが自慢', favoriteMaterialId: 'mat_honey', color: '#d8792a', portrait: 'maple', greetings: greetings('メープル', 'パンケーキの焼き加減') },
+  { id: 'cinnamon', name: 'シナモン', shopId: 'shop_cinnamon', personality: '大人っぽいお姉さん', favoriteMaterialId: 'mat_flour', color: '#a0693a', portrait: 'cinnamon', greetings: greetings('シナモン', '香り付けのコツ') },
+  { id: 'lemon', name: 'レモン', shopId: 'shop_lemon', personality: '爽やかな性格の女の子', favoriteMaterialId: 'mat_lemon', color: '#e8d048', portrait: 'lemon', greetings: greetings('レモン', 'レモンの仕入れ') },
+  { id: 'vanilla', name: 'バニラ', shopId: 'shop_vanilla', personality: 'やさしくておっとりした女の子', favoriteMaterialId: 'mat_vanilla', color: '#f0e6cc', portrait: 'vanilla', greetings: greetings('バニラ', 'クリームの泡立て方') },
 ];
 
 export function getCharacter(id: string): CharacterDef {

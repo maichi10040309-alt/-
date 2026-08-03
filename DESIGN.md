@@ -4,17 +4,40 @@
 数値バランスをまとめたものです。すべて `src/data/*.ts` に外出しされており、
 `調整可能なパラメータ` とコメントされている値は後から自由に変更できます。
 
-## 1. キャラクター (18人) — `src/data/characters.ts`
+## 0. 実イラスト素材への移行(重要な更新)
+
+ユーザーから提供されたイラスト素材(`src/assets/characters/*.png`,
+`src/assets/buildings/*.png`)を組み込んだことに伴い、キャラクター構成を
+以下のように変更した。
+
+- プレイヤー = **ストロベリー**(いちごケーキ店の店主)。プレイヤー自身は
+  `CHARACTERS` 配列には含まれず、`PLAYER_SHOP`(`src/data/shops.ts`)で管理する。
+- NPCは **17人**(ホワイト、ビター、ミルク、抹茶、クランチ、マロン、シャンパン、
+  ペシェ、ボンム、アーモンド、ハニー、キャラメル、ブルーベリー、メープル、
+  シナモン、レモン、バニラ)。
+- `本屋(アーモンドの店)` は `ShopType = 'bookstore'` の特別な店で、素材ではなく
+  未習得レシピを購入できる(`game.ts` の `openCharacterDialogue(... 'books')`)。
+- キャラクター/建物の画像は `src/data/imageAssets.ts` で `import` され、
+  Vite の `build.assetsInlineLimit`(`vite.config.ts`)により base64 データURIと
+  してJSに埋め込まれる。これにより Artifact 等の単一HTML書き出しでも別ファイル
+  参照なしで動作する。
+- マップ上の描画(`src/ui/mapRenderer.ts`)は `drawSpriteAtFeet` /
+  `drawImageFitBottom`(`src/ui/imageCache.ts`)で実イラストを描画する。
+  プロシージャル生成のキャラ/建物描画(`pixelArt.ts` の旧
+  `drawCharacterOnMap` 等)は削除済み。スイーツアイコンのみ引き続き
+  プロシージャル描画(`drawSweetIcon`)。
+
+## 1. キャラクター (17人のNPC) — `src/data/characters.ts`
 
 ```ts
 interface CharacterDef {
-  id: string;              // "char_01" ... "char_18"
+  id: string;              // 例: "white", "bitter", ...(画像アセットのキーと共通)
   name: string;             // 表示名
   shopId: string;           // 常駐する店舗ID (shops.ts と対応)
   personality: string;      // 性格フレーバーテキスト(一言)
   favoriteMaterialId: string; // 好物素材(イベント/贈り物テンプレで使用)
-  color: string;            // プレースホルダー用の色(#rrggbb)
-  portrait: string;         // 差し替え用画像パス(未使用時はプレースホルダー描画)
+  color: string;            // アクセント色(#rrggbb、UI装飾用。描画本体は実画像)
+  portrait: string;         // imageAssets.ts の CHARACTER_PORTRAITS / SHOP_BUILDING_IMAGES のキー
   greetings: [string, string, string, string, string]; // 好感度Lv1〜5の会話セリフ
 }
 ```

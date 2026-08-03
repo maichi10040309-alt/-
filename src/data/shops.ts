@@ -1,34 +1,34 @@
 import type { ShopDef } from '@/types';
 
-// 18店舗を 2F/3F/4F の3フロアに6店舗ずつ配置(各フロア3列×2行)。
-// 1F はプレイヤー自身の店とエレベーターのみのエントランスフロア。
+// 17店舗を 2F/3F/4F の3フロアに配置(2F・3F=6店舗、4F=5店舗)。
+// 1F はプレイヤー(ストロベリー、いちごケーキ店主)のお店とエレベーターのみ。
 export const SHOPS: ShopDef[] = [
-  { id: 'shop_01', name: 'ふわふわケーキ堂', type: 'sweets', characterId: 'char_01', floor: 2, gridX: 0, gridY: 0 },
-  { id: 'shop_02', name: '粉と砂糖の倉庫', type: 'material', characterId: 'char_02', floor: 2, gridX: 1, gridY: 0 },
-  { id: 'shop_03', name: 'クッキーの詩', type: 'sweets', characterId: 'char_03', floor: 2, gridX: 2, gridY: 0 },
-  { id: 'shop_04', name: '牧場直送デイリー', type: 'material', characterId: 'char_04', floor: 2, gridX: 0, gridY: 1 },
-  { id: 'shop_05', name: 'プリン専門店ぷるん', type: 'sweets', characterId: 'char_05', floor: 2, gridX: 1, gridY: 1 },
-  { id: 'shop_06', name: '果樹園マルシェ', type: 'material', characterId: 'char_06', floor: 2, gridX: 2, gridY: 1 },
+  { id: 'shop_white', name: '高級ケーキ店', type: 'sweets', characterId: 'white', floor: 2, gridX: 0, gridY: 0 },
+  { id: 'shop_bitter', name: 'チョコレート工房', type: 'sweets', characterId: 'bitter', floor: 2, gridX: 1, gridY: 0 },
+  { id: 'shop_milk', name: '焼き菓子・パン屋', type: 'sweets', characterId: 'milk', floor: 2, gridX: 2, gridY: 0 },
+  { id: 'shop_matcha', name: '抹茶茶房・和菓子屋', type: 'sweets', characterId: 'matcha', floor: 2, gridX: 0, gridY: 1 },
+  { id: 'shop_crunch', name: 'クッキー専門店', type: 'sweets', characterId: 'crunch', floor: 2, gridX: 1, gridY: 1 },
+  { id: 'shop_marron', name: 'モンブラン・栗菓子店', type: 'sweets', characterId: 'marron', floor: 2, gridX: 2, gridY: 1 },
 
-  { id: 'shop_07', name: 'チョコレート工房', type: 'sweets', characterId: 'char_07', floor: 3, gridX: 0, gridY: 0 },
-  { id: 'shop_08', name: 'はちみつ蜂の巣店', type: 'material', characterId: 'char_08', floor: 3, gridX: 1, gridY: 0 },
-  { id: 'shop_09', name: 'キャンディキャンドル', type: 'sweets', characterId: 'char_09', floor: 3, gridX: 2, gridY: 0 },
-  { id: 'shop_10', name: 'カカオ&バニラ商会', type: 'material', characterId: 'char_10', floor: 3, gridX: 0, gridY: 1 },
-  { id: 'shop_11', name: 'アップルパイ工房', type: 'sweets', characterId: 'char_11', floor: 3, gridX: 1, gridY: 1 },
-  { id: 'shop_12', name: 'クリームの泉', type: 'material', characterId: 'char_12', floor: 3, gridX: 2, gridY: 1 },
+  { id: 'shop_champagne', name: '高級パティスリー', type: 'sweets', characterId: 'champagne', floor: 3, gridX: 0, gridY: 0 },
+  { id: 'shop_peche', name: '桃のお菓子屋', type: 'sweets', characterId: 'peche', floor: 3, gridX: 1, gridY: 0 },
+  { id: 'shop_pomme', name: 'アップルパイ専門店', type: 'sweets', characterId: 'pomme', floor: 3, gridX: 2, gridY: 0 },
+  { id: 'shop_almond', name: '本屋(アーモンドの店)', type: 'bookstore', characterId: 'almond', floor: 3, gridX: 0, gridY: 1 },
+  { id: 'shop_honey', name: 'ハニースイーツ店', type: 'sweets', characterId: 'honey', floor: 3, gridX: 1, gridY: 1 },
+  { id: 'shop_caramel', name: 'キャラメル工房', type: 'sweets', characterId: 'caramel', floor: 3, gridX: 2, gridY: 1 },
 
-  { id: 'shop_13', name: 'タルト&タルトレット', type: 'sweets', characterId: 'char_13', floor: 4, gridX: 0, gridY: 0 },
-  { id: 'shop_14', name: 'ナッツ&抹茶問屋', type: 'material', characterId: 'char_14', floor: 4, gridX: 1, gridY: 0 },
-  { id: 'shop_15', name: 'ロールケーキ横丁', type: 'sweets', characterId: 'char_15', floor: 4, gridX: 2, gridY: 0 },
-  { id: 'shop_16', name: '不思議素材コレクター', type: 'material', characterId: 'char_16', floor: 4, gridX: 0, gridY: 1 },
-  { id: 'shop_17', name: 'アイスクリーム城', type: 'sweets', characterId: 'char_17', floor: 4, gridX: 1, gridY: 1 },
-  { id: 'shop_18', name: '星屑バザール', type: 'material', characterId: 'char_18', floor: 4, gridX: 2, gridY: 1 },
+  { id: 'shop_blueberry', name: 'ベリータルト店', type: 'sweets', characterId: 'blueberry', floor: 4, gridX: 0, gridY: 0 },
+  { id: 'shop_maple', name: 'パンケーキカフェ', type: 'sweets', characterId: 'maple', floor: 4, gridX: 1, gridY: 0 },
+  { id: 'shop_cinnamon', name: 'シナモンベイク店', type: 'sweets', characterId: 'cinnamon', floor: 4, gridX: 2, gridY: 0 },
+  { id: 'shop_lemon', name: 'レモンケーキ店', type: 'sweets', characterId: 'lemon', floor: 4, gridX: 0, gridY: 1 },
+  { id: 'shop_vanilla', name: 'バニラクリーム店', type: 'sweets', characterId: 'vanilla', floor: 4, gridX: 1, gridY: 1 },
 ];
 
-// プレイヤー自身の店(1F エントランスに配置、18店には含めない)
+// プレイヤー自身の店(1F エントランスに配置、17店には含めない)
 export const PLAYER_SHOP = {
   id: 'player_shop',
-  name: 'あなたのお店',
+  name: 'いちごケーキ店',
+  portrait: 'strawberry',
   floor: 1,
 };
 

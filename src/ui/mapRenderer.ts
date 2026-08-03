@@ -1,7 +1,9 @@
 import type { GameState } from '@/types';
 import { SHOPS, PLAYER_SHOP, FLOORS, getShopsOnFloor } from '@/data/shops';
 import { getCharacter } from '@/data/characters';
-import { drawShopBuilding, drawCharacterOnMap, drawPlayerOnMap } from './pixelArt';
+import { CHARACTER_PORTRAITS, SHOP_BUILDING_IMAGES } from '@/data/imageAssets';
+import { getImage, drawSpriteAtFeet, drawImageFitBottom } from './imageCache';
+import { drawShadow } from './pixelArt';
 
 export const CANVAS_W = 960;
 export const CANVAS_H = 540;
@@ -38,6 +40,13 @@ function shopRect(gridX: number, gridY: number): ShopRect {
     w: CELL_W - 30,
     h: CELL_H - 30,
   };
+}
+
+// キャラクターごとに一意だが決定的なゆらぎ位相を作る(全員が同期して揺れないように)
+function phaseFor(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return (h % 1000) / 1000;
 }
 
 export type MapHit = { type: 'shop'; id: string } | { type: 'player_shop' } | { type: 'elevator' } | null;
@@ -231,7 +240,8 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor
     ctx.strokeStyle = '#ffd166';
     ctx.lineWidth = 3;
     ctx.stroke();
-    drawShopBuilding(ctx, PLAYER_SHOP_X + PLAYER_SHOP_W / 2 - 30, PLAYER_SHOP_Y + 10, 60, '#ffd166', 'sweets', isNight);
+    const shopImg = getImage(SHOP_BUILDING_IMAGES[PLAYER_SHOP.portrait]);
+    drawImageFitBottom(ctx, shopImg, PLAYER_SHOP_X + 12, PLAYER_SHOP_Y + 8, PLAYER_SHOP_W - 24, PLAYER_SHOP_H - 46);
     ctx.fillStyle = isNight ? '#ffe6f4' : '#4a2c2a';
     ctx.font = 'bold 15px sans-serif';
     ctx.fillText(PLAYER_SHOP.name, PLAYER_SHOP_X + PLAYER_SHOP_W / 2, PLAYER_SHOP_Y + PLAYER_SHOP_H - 24);
@@ -250,25 +260,26 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor
       ctx.fillStyle = isNight ? 'rgba(50,35,65,0.55)' : 'rgba(255,255,255,0.7)';
       roundRect(ctx, r.x, r.y, r.w, r.h, 14);
       ctx.fill();
-      ctx.strokeStyle = shop.type === 'material' ? '#6fa892' : '#d9678f';
+      ctx.strokeStyle = shop.type === 'bookstore' ? '#8a7ab5' : '#d9678f';
       ctx.lineWidth = 3;
       ctx.stroke();
 
       ctx.textAlign = 'center';
-      drawShopBuilding(ctx, r.x + r.w / 2 - 26, r.y + 6, 52, char.color, shop.type, isNight);
-      drawCharacterOnMap(ctx, r.x + r.w / 2 - 15, r.y + 40, 30, char.id, char.color, animClock);
+      const buildingImg = getImage(SHOP_BUILDING_IMAGES[char.portrait]);
+      drawImageFitBottom(ctx, buildingImg, r.x + 10, r.y + 4, r.w - 20, r.h * 0.56);
+
+      const bob = Math.sin(animClock * 1.3 + phaseFor(char.id) * 10) * 2;
+      drawShadow(ctx, r.x + r.w / 2, r.y + r.h - 28, r.w * 0.3);
+      const charImg = getImage(CHARACTER_PORTRAITS[char.portrait]);
+      drawSpriteAtFeet(ctx, charImg, r.x + r.w / 2, r.y + r.h - 30 + bob, r.h * 0.46);
 
       ctx.fillStyle = isNight ? '#ffe6f4' : '#3a2a20';
       ctx.font = 'bold 13px sans-serif';
-      ctx.fillText(shop.name, r.x + r.w / 2, r.y + r.h - 38);
+      ctx.fillText(shop.name, r.x + r.w / 2, r.y + r.h - 16);
       ctx.font = '11px sans-serif';
       ctx.fillStyle = isNight ? '#e6c9e0' : '#6b4a3a';
-      ctx.fillText(`${char.name}(${shop.type === 'material' ? '素材店' : 'スイーツ店'})`, r.x + r.w / 2, r.y + r.h - 22);
-
       const hearts = '♥'.repeat(affinity.level) + '♡'.repeat(5 - affinity.level);
-      ctx.fillStyle = '#ff6f91';
-      ctx.font = '12px sans-serif';
-      ctx.fillText(hearts, r.x + r.w / 2, r.y + r.h - 6);
+      ctx.fillText(`${char.name} ${hearts}`, r.x + r.w / 2, r.y + r.h - 3);
 
       if (affinity.pendingEventLevel) {
         ctx.save();
@@ -288,5 +299,8 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor
 
   // プレイヤー本人(常に最前面)
   ctx.textAlign = 'center';
-  drawPlayerOnMap(ctx, player.x - 13, player.y - 24, 26, animClock, player.moving);
+  const playerImg = getImage(CHARACTER_PORTRAITS.strawberry);
+  const walkBob = player.moving ? Math.abs(Math.sin(animClock * 9)) * 3 : Math.sin(animClock * 1.2) * 1.2;
+  drawShadow(ctx, player.x, player.y, 34);
+  drawSpriteAtFeet(ctx, playerImg, player.x, player.y - walkBob, 46);
 }

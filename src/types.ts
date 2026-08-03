@@ -6,7 +6,7 @@ export type TimeOfDay = 'morning' | 'noon' | 'night';
 
 export const TIME_ORDER: TimeOfDay[] = ['morning', 'noon', 'night'];
 
-export type ShopType = 'sweets' | 'material';
+export type ShopType = 'sweets' | 'bookstore';
 
 export interface ShopDef {
   id: string;
