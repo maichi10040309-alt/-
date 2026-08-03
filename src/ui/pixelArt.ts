@@ -90,6 +90,77 @@ export function drawCharacterAvatar(ctx: CanvasRenderingContext2D, x: number, y:
 }
 
 // ---------------------------------------------------------
+// マップ上を歩く全身スプライト(頭+胴体+脚、5x14の半分グリッド)
+// ---------------------------------------------------------
+
+const BODY_BASE: PixelGrid = [
+  [0, 0, 1, 1, 1],
+  [0, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1],
+  [1, 2, 2, 2, 2],
+  [1, 2, 3, 2, 2],
+  [1, 2, 2, 2, 2],
+  [0, 2, 2, 2, 2],
+  [0, 0, 6, 6, 6],
+  [0, 6, 6, 6, 6],
+  [0, 6, 6, 6, 6],
+  [0, 6, 6, 6, 6],
+  [0, 0, 7, 0, 7],
+  [0, 0, 8, 0, 8],
+  [0, 0, 0, 0, 0],
+];
+
+function drawBodySprite(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, palette: Palette, bobOffset: number): void {
+  const cell = size / 10;
+  drawMirrored(ctx, x, y - bobOffset, cell, BODY_BASE, palette);
+}
+
+export function drawShadow(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number): void {
+  ctx.save();
+  ctx.fillStyle = 'rgba(40,20,20,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, w / 2, w / 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * マップ上に常時立っているキャラクター(店番)を描画する。idleでゆっくり上下に揺れる。
+ * 制服(胴体・脚)は誰でも読み取りやすいよう固定のクリーム色に統一し、
+ * 髪色だけを店のテーマカラーで塗り分けて個性を出す(暗い店カラーでも視認性を保つため)。
+ */
+export function drawCharacterOnMap(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, characterId: string, baseColor: string, animPhase: number): void {
+  const seed = hashSeed(characterId);
+  const eyeColor = ['#3a2a20', '#3d6ea5', '#c98a2e'][seed % 3];
+  const palette: Palette = {
+    1: baseColor,
+    2: '#ffe3c6',
+    3: eyeColor,
+    6: '#fff4e8',
+    7: shadeColor(baseColor, 10),
+    8: '#4a2c2a',
+  };
+  const bob = Math.sin(animPhase * 1.4 + seed) * 1.4;
+  drawShadow(ctx, x + size / 2, y + size * 1.15, size * 0.7);
+  drawBodySprite(ctx, x, y, size, palette, bob);
+}
+
+/** プレイヤーの全身スプライト。歩行中は跳ねるように、待機中はゆっくり揺れる。 */
+export function drawPlayerOnMap(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, animPhase: number, walking: boolean): void {
+  const palette: Palette = {
+    1: '#7a4a2a',
+    2: '#ffe3c6',
+    3: '#3a2a20',
+    6: '#fff2df',
+    7: '#e0776b',
+    8: '#4a2c2a',
+  };
+  const bob = walking ? Math.abs(Math.sin(animPhase * 6)) * 3 : Math.sin(animPhase * 1.2) * 1.2;
+  drawShadow(ctx, x + size / 2, y + size * 1.15, size * 0.75);
+  drawBodySprite(ctx, x, y, size, palette, bob);
+}
+
+// ---------------------------------------------------------
 // 店舗の建物アイコン(12x12)
 // ---------------------------------------------------------
 

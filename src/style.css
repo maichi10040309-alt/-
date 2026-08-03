@@ -427,3 +427,110 @@ button:disabled {
 .toast-love { background: #c9506f; }
 .toast-success { background: #4a8a5c; }
 .toast-warn { background: #8a4a4a; }
+
+/* ---- 会話ダイアログボックス(マップを覆わないVN風パネル) ---- */
+.dialogue-box {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 56px;
+  display: flex;
+  gap: 14px;
+  background: #fffaf3ee;
+  backdrop-filter: blur(2px);
+  border: 3px solid #f4a6c1;
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  transform: translateY(220px);
+  opacity: 0;
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1.1), opacity 0.18s ease;
+  pointer-events: none !important;
+  max-height: 190px;
+  visibility: hidden;
+}
+
+.dialogue-box.open {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto !important;
+  visibility: visible;
+}
+
+.dialogue-box .dlg-portrait {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+}
+
+.dialogue-box .dlg-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.dlg-name {
+  font-weight: bold;
+  font-size: 14px;
+  color: #b3446c;
+}
+
+.dlg-sub {
+  font-weight: normal;
+  font-size: 11px;
+  color: #8a5a3c;
+}
+
+.dlg-text {
+  font-size: 13px;
+  color: #4a2c2a;
+  min-height: 20px;
+}
+
+.dlg-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+.dlg-material-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 90px;
+  overflow-y: auto;
+}
+
+.dlg-material {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.dlg-material .swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.dlg-material-name {
+  flex: 1;
+}
+
+.dlg-material button {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialogue-box {
+    transition: none;
+  }
+}

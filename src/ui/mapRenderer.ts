@@ -1,20 +1,26 @@
 import type { GameState } from '@/types';
 import { SHOPS, PLAYER_SHOP } from '@/data/shops';
 import { getCharacter } from '@/data/characters';
-import { drawShopBuilding } from './pixelArt';
+import { drawShopBuilding, drawCharacterOnMap, drawPlayerOnMap } from './pixelArt';
 
 export const CANVAS_W = 960;
 export const CANVAS_H = 540;
 
 const GRID_LEFT = 40;
-const GRID_TOP = 175;
+const GRID_TOP = 150;
 const CELL_W = 148;
-const CELL_H = 100;
+const CELL_H = 108;
 
 const PLAYER_SHOP_X = CANVAS_W / 2 - 90;
-const PLAYER_SHOP_Y = 78;
+const PLAYER_SHOP_Y = 44;
 const PLAYER_SHOP_W = 180;
 const PLAYER_SHOP_H = 90;
+
+export interface PlayerSprite {
+  x: number;
+  y: number;
+  moving: boolean;
+}
 
 interface ShopRect {
   x: number;
@@ -46,6 +52,19 @@ export function hitTestMap(x: number, y: number): MapHit {
   }
   return null;
 }
+
+/** クリックされた店の「立ち位置」(プレイヤーが歩いていく目的地)を返す */
+export function getStandingSpot(hit: MapHit): { x: number; y: number } {
+  if (!hit) return { x: CANVAS_W / 2, y: CANVAS_H / 2 };
+  if (hit.type === 'player_shop') {
+    return { x: PLAYER_SHOP_X + PLAYER_SHOP_W / 2, y: PLAYER_SHOP_Y + PLAYER_SHOP_H + 16 };
+  }
+  const shop = SHOPS.find((s) => s.id === hit.id)!;
+  const r = shopRect(shop.gridX, shop.gridY);
+  return { x: r.x + r.w / 2, y: Math.min(r.y + r.h + 14, CANVAS_H - 60) };
+}
+
+export const PLAYER_HOME_SPOT = { x: PLAYER_SHOP_X + PLAYER_SHOP_W / 2, y: PLAYER_SHOP_Y + PLAYER_SHOP_H + 16 };
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath();
@@ -110,15 +129,10 @@ function drawBackground(ctx: CanvasRenderingContext2D, timeOfDay: GameState['tim
   ctx.restore();
 }
 
-export function renderMap(ctx: CanvasRenderingContext2D, state: GameState): void {
+export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, animClock: number, player: PlayerSprite): void {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   drawBackground(ctx, state.timeOfDay);
   const isNight = state.timeOfDay === 'night';
-
-  ctx.font = 'bold 15px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = isNight ? '#ffd6e8' : '#b3446c';
-  ctx.fillText('スイーツデパート 1F フロアマップ', CANVAS_W / 2, 40);
 
   // プレイヤーの店
   ctx.fillStyle = isNight ? 'rgba(60,40,70,0.55)' : 'rgba(255,255,255,0.55)';
@@ -127,7 +141,8 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState): void
   ctx.strokeStyle = '#ffd166';
   ctx.lineWidth = 3;
   ctx.stroke();
-  drawShopBuilding(ctx, PLAYER_SHOP_X + PLAYER_SHOP_W / 2 - 24, PLAYER_SHOP_Y + 4, 48, '#ffd166', 'sweets', isNight);
+  ctx.textAlign = 'center';
+  drawShopBuilding(ctx, PLAYER_SHOP_X + PLAYER_SHOP_W / 2 - 22, PLAYER_SHOP_Y + 4, 44, '#ffd166', 'sweets', isNight);
   ctx.fillStyle = isNight ? '#ffe6f4' : '#4a2c2a';
   ctx.font = 'bold 13px sans-serif';
   ctx.fillText(PLAYER_SHOP.name, PLAYER_SHOP_X + PLAYER_SHOP_W / 2, PLAYER_SHOP_Y + PLAYER_SHOP_H - 16);
@@ -147,19 +162,21 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState): void
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    drawShopBuilding(ctx, r.x + r.w / 2 - 20, r.y + 4, 40, char.color, shop.type, isNight);
+    ctx.textAlign = 'center';
+    drawShopBuilding(ctx, r.x + r.w / 2 - 17, r.y + 2, 34, char.color, shop.type, isNight);
+    drawCharacterOnMap(ctx, r.x + r.w / 2 - 11, r.y + 24, 22, char.id, char.color, animClock);
 
     ctx.fillStyle = isNight ? '#ffe6f4' : '#3a2a20';
     ctx.font = 'bold 10.5px sans-serif';
-    ctx.fillText(shop.name, r.x + r.w / 2, r.y + r.h - 24);
+    ctx.fillText(shop.name, r.x + r.w / 2, r.y + r.h - 30);
     ctx.font = '9.5px sans-serif';
     ctx.fillStyle = isNight ? '#e6c9e0' : '#6b4a3a';
-    ctx.fillText(`${char.name}(${shop.type === 'material' ? '素材店' : 'スイーツ店'})`, r.x + r.w / 2, r.y + r.h - 12);
+    ctx.fillText(`${char.name}(${shop.type === 'material' ? '素材店' : 'スイーツ店'})`, r.x + r.w / 2, r.y + r.h - 18);
 
     const hearts = '♥'.repeat(affinity.level) + '♡'.repeat(5 - affinity.level);
     ctx.fillStyle = '#ff6f91';
     ctx.font = '10px sans-serif';
-    ctx.fillText(hearts, r.x + r.w / 2, r.y + r.h - 1);
+    ctx.fillText(hearts, r.x + r.w / 2, r.y + r.h - 5);
 
     if (affinity.pendingEventLevel) {
       ctx.save();
@@ -175,4 +192,8 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState): void
       ctx.fillText('!', r.x + r.w - 10, r.y + 14);
     }
   }
+
+  // プレイヤー本人(常に最前面)
+  ctx.textAlign = 'center';
+  drawPlayerOnMap(ctx, player.x - 13, player.y - 24, 26, animClock, player.moving);
 }

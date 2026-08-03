@@ -9,16 +9,18 @@ import { enterContest, previewWinProbability } from '@/systems/contestSystem';
 import { getPendingEvent, resolveConsultationEvent, resolveMinigameEvent } from '@/systems/eventSystem';
 
 import { CHARACTERS, getCharacter } from '@/data/characters';
-import { getShop } from '@/data/shops';
+import { getShop, getShopByCharacter } from '@/data/shops';
 import { MATERIALS, getMaterial } from '@/data/materials';
 import { RECIPES, getRecipe, rankLabel } from '@/data/recipes';
 import { CONTEST_STAGES, getContestStage } from '@/data/contest';
 
 import { initOverlay, openModal, closeModal, closeButtonHtml, escapeHtml } from '@/ui/panels';
-import { renderMap, hitTestMap, CANVAS_W, CANVAS_H } from '@/ui/mapRenderer';
+import { renderMap, hitTestMap, getStandingSpot, PLAYER_HOME_SPOT, CANVAS_W, CANVAS_H, type PlayerSprite } from '@/ui/mapRenderer';
 import { buildHud, renderTopBar } from '@/ui/hud';
 import { drawCharacterAvatar, drawSweetIcon } from '@/ui/pixelArt';
 import { initEffects, showToast, burstConfetti } from '@/ui/effects';
+
+const PLAYER_SPEED = 260; // 論理キャンバス座標 px/秒
 
 export class Game {
   private state: GameState = createInitialState();
@@ -27,8 +29,21 @@ export class Game {
   private overlay: HTMLElement;
   private topBar: HTMLElement;
   private bottomBar: HTMLElement;
+  private dialogueBox: HTMLElement;
   private minigameRaf: number | null = null;
   private dayStartMoney = 0;
+
+  private player: PlayerSprite & { targetX: number; targetY: number } = {
+    x: PLAYER_HOME_SPOT.x,
+    y: PLAYER_HOME_SPOT.y,
+    targetX: PLAYER_HOME_SPOT.x,
+    targetY: PLAYER_HOME_SPOT.y,
+    moving: false,
+  };
+  private pendingArrival: (() => void) | null = null;
+  private animClock = 0;
+  private lastTs = 0;
+  private rafId: number | null = null;
 
   constructor(canvas: HTMLCanvasElement, overlay: HTMLElement) {
     this.canvas = canvas;
@@ -40,6 +55,8 @@ export class Game {
     this.topBar.className = 'hud-bar';
     this.bottomBar = document.createElement('div');
     this.bottomBar.className = 'hud-menu';
+    this.dialogueBox = document.createElement('div');
+    this.dialogueBox.className = 'dialogue-box';
 
     this.overlay = overlay;
     initOverlay(overlay);
@@ -52,15 +69,76 @@ export class Game {
     this.showTitleScreen();
   }
 
+  // ---------------------------------------------------------
+  // ゲームループ / プレイヤー移動
+  // ---------------------------------------------------------
+
+  private loopTick = (ts: number): void => {
+    if (!this.lastTs) this.lastTs = ts;
+    const dt = Math.min(0.05, (ts - this.lastTs) / 1000);
+    this.lastTs = ts;
+    this.animClock += dt;
+    this.updatePlayerMovement(dt);
+    this.render();
+    this.rafId = requestAnimationFrame(this.loopTick);
+  };
+
+  private startLoop(): void {
+    if (this.rafId !== null) return;
+    this.lastTs = 0;
+    this.rafId = requestAnimationFrame(this.loopTick);
+  }
+
+  private stopLoop(): void {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+
+  private updatePlayerMovement(dt: number): void {
+    const dx = this.player.targetX - this.player.x;
+    const dy = this.player.targetY - this.player.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 2) {
+      this.player.x = this.player.targetX;
+      this.player.y = this.player.targetY;
+      this.player.moving = false;
+      if (this.pendingArrival) {
+        const fn = this.pendingArrival;
+        this.pendingArrival = null;
+        fn();
+      }
+      return;
+    }
+    this.player.moving = true;
+    const step = Math.min(dist, PLAYER_SPEED * dt);
+    this.player.x += (dx / dist) * step;
+    this.player.y += (dy / dist) * step;
+  }
+
+  private walkTo(target: { x: number; y: number }, onArrive?: () => void): void {
+    this.player.targetX = target.x;
+    this.player.targetY = target.y;
+    this.pendingArrival = onArrive ?? null;
+  }
+
   private handleCanvasClick(e: MouseEvent): void {
     if (document.getElementById('active-modal') || document.getElementById('title-screen')) return;
     const rect = this.canvas.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
     const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+    this.hideDialogue();
     const hit = hitTestMap(x, y);
-    if (!hit) return;
-    if (hit.type === 'player_shop') this.openPlayerShop();
-    else this.openShop(hit.id);
+    if (!hit) {
+      this.walkTo({ x, y });
+      return;
+    }
+    const spot = getStandingSpot(hit);
+    this.walkTo(spot, () => {
+      if (hit.type === 'player_shop') this.openPlayerShop();
+      else this.openCharacterDialogue(hit.id);
+    });
   }
 
   // ---------------------------------------------------------
@@ -68,17 +146,18 @@ export class Game {
   // ---------------------------------------------------------
 
   private render(): void {
-    renderMap(this.ctx, this.state);
+    renderMap(this.ctx, this.state, this.animClock, this.player);
     renderTopBar(this.topBar, this.state);
   }
 
-  /** モーダルHTML内の <canvas data-avatar> / <canvas data-sweet> にドット絵風アイコンを描画する */
+  /** モーダル/会話ボックスHTML内の <canvas data-avatar> / <canvas data-sweet> にアイコンを描画する */
   private hydrateIcons(container: HTMLElement): void {
     container.querySelectorAll<HTMLCanvasElement>('canvas[data-avatar]').forEach((canvas) => {
       const charId = canvas.dataset.avatar!;
       const char = getCharacter(charId);
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawCharacterAvatar(ctx, 2, 2, canvas.width - 4, charId, char.color);
     });
     container.querySelectorAll<HTMLCanvasElement>('canvas[data-sweet]').forEach((canvas) => {
@@ -96,6 +175,7 @@ export class Game {
     initEffects(this.overlay);
     this.overlay.appendChild(this.topBar);
     this.overlay.appendChild(this.bottomBar);
+    this.overlay.appendChild(this.dialogueBox);
     buildHud(this.topBar, this.bottomBar, {
       onResearch: () => this.doResearch(),
       onCraft: () => this.openCraftPanel(),
@@ -105,7 +185,8 @@ export class Game {
       onSave: () => this.doSave(),
     });
     this.dayStartMoney = this.state.money;
-    this.render();
+    this.player = { x: PLAYER_HOME_SPOT.x, y: PLAYER_HOME_SPOT.y, targetX: PLAYER_HOME_SPOT.x, targetY: PLAYER_HOME_SPOT.y, moving: false };
+    this.startLoop();
   }
 
   // ---------------------------------------------------------
@@ -113,6 +194,7 @@ export class Game {
   // ---------------------------------------------------------
 
   private showTitleScreen(): void {
+    this.stopLoop();
     this.overlay.innerHTML = '';
     const screen = document.createElement('div');
     screen.className = 'title-screen';
@@ -120,6 +202,7 @@ export class Game {
     screen.innerHTML = `
       <h1>🍰 スイーツデパート物語 🍩</h1>
       <p>デパートで自分のお店を育てながら、18人の店主と仲良くなろう。</p>
+      <p class="sub">マップをクリックすると、その場所まで歩いていきます。</p>
       <div class="row" style="justify-content:center">
         <button id="btn-new-game">はじめから</button>
         <button class="secondary" id="btn-continue" ${hasSaveData() ? '' : 'disabled'}>つづきから</button>
@@ -138,13 +221,26 @@ export class Game {
   }
 
   // ---------------------------------------------------------
+  // 会話ボックス(マップを覆わないビジュアルノベル風パネル)
+  // ---------------------------------------------------------
+
+  private showDialogueHtml(html: string): HTMLElement {
+    this.dialogueBox.innerHTML = html;
+    this.dialogueBox.classList.add('open');
+    return this.dialogueBox;
+  }
+
+  private hideDialogue(): void {
+    this.dialogueBox.classList.remove('open');
+  }
+
+  // ---------------------------------------------------------
   // 基本アクション
   // ---------------------------------------------------------
 
   private doResearch(): void {
     const dayBefore = this.state.day;
     const result = performResearch(this.state);
-    this.render();
     const dayChanged = this.state.day !== dayBefore;
 
     openModal(`
@@ -197,59 +293,76 @@ export class Game {
   }
 
   // ---------------------------------------------------------
-  // キャラクター/店舗パネル
+  // キャラクター会話(マップ下部のビジュアルノベル風ダイアログ)
   // ---------------------------------------------------------
 
-  private openShop(shopId: string): void {
+  private openCharacterDialogue(shopId: string, view: 'greet' | 'materials' = 'greet'): void {
     const shop = getShop(shopId);
     const char = getCharacter(shop.characterId);
     const affinity = this.state.characterAffinity[char.id];
     const pending = getPendingEvent(this.state, char.id);
 
-    let materialsHtml = '';
-    if (shop.type === 'material') {
+    let bodyHtml: string;
+    if (view === 'materials') {
       const sold = MATERIALS.filter((m) => m.soldAtShopId === shop.id);
-      materialsHtml = `
-        <h3>🛒 取扱素材</h3>
-        <div class="list">
+      bodyHtml = `
+        <div class="dlg-name">🛒 ${escapeHtml(shop.name)}の品揃え</div>
+        <div class="dlg-material-list">
           ${sold
             .map(
               (m) => `
-            <div class="card">
+            <div class="dlg-material">
               <div class="swatch" style="background:${m.color}"></div>
-              <div class="info"><div class="title">${escapeHtml(m.name)}</div><div class="sub">${m.buyPrice}ベリー</div></div>
+              <span class="dlg-material-name">${escapeHtml(m.name)}</span>
+              <span class="sub">${m.buyPrice}ベリー</span>
               <button data-buy="${m.id}" data-price="${m.buyPrice}">購入</button>
             </div>`
             )
             .join('')}
         </div>
+        <div class="dlg-actions"><button class="secondary" id="dlg-back">戻る</button></div>
+      `;
+    } else {
+      bodyHtml = `
+        <div class="dlg-name">${escapeHtml(char.name)} <span class="dlg-sub">好感度 Lv${affinity.level}/5 ${'♥'.repeat(affinity.level)}${'♡'.repeat(5 - affinity.level)}</span></div>
+        <div class="dlg-text" id="dlg-text">「${escapeHtml(char.greetings[affinity.level - 1])}」</div>
+        <div class="dlg-actions">
+          <button id="dlg-talk">話しかける</button>
+          ${pending ? `<button id="dlg-event">✨ ${escapeHtml(pending.templateTitle)}</button>` : ''}
+          ${shop.type === 'material' ? `<button class="secondary" id="dlg-shop">🛒 素材を見る</button>` : ''}
+          <button class="secondary" id="dlg-close">立ち去る</button>
+        </div>
       `;
     }
 
-    const panel = openModal(`
-      <h2>${escapeHtml(shop.name)}</h2>
-      <div class="card">
-        <canvas class="avatar-canvas" width="64" height="64" data-avatar="${char.id}"></canvas>
-        <div class="info">
-          <div class="title">${escapeHtml(char.name)}(${escapeHtml(char.personality)})</div>
-          <div class="sub">好感度 Lv${affinity.level} / 5 &nbsp; ${'♥'.repeat(affinity.level)}${'♡'.repeat(5 - affinity.level)}</div>
-        </div>
-      </div>
-      <p id="talk-line" style="min-height:36px">「${escapeHtml(char.greetings[affinity.level - 1])}」</p>
-      <div class="row">
-        <button id="btn-talk">話しかける</button>
-        ${pending ? `<button id="btn-event">✨ ${escapeHtml(pending.templateTitle)}をする</button>` : ''}
-      </div>
-      ${materialsHtml}
-      ${closeButtonHtml()}
+    const box = this.showDialogueHtml(`
+      <canvas class="avatar-canvas dlg-portrait" width="72" height="72" data-avatar="${char.id}"></canvas>
+      <div class="dlg-body">${bodyHtml}</div>
     `);
-    this.hydrateIcons(panel);
+    this.hydrateIcons(box);
 
-    panel.querySelector('#btn-talk')!.addEventListener('click', () => {
+    if (view === 'materials') {
+      box.querySelector('#dlg-back')!.addEventListener('click', () => this.openCharacterDialogue(shopId, 'greet'));
+      box.querySelectorAll<HTMLButtonElement>('[data-buy]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const materialId = btn.dataset.buy!;
+          const price = Number(btn.dataset.price);
+          if (buyMaterial(this.state, materialId, price, 1)) {
+            showToast(`🛒 ${getMaterial(materialId).name}を購入した`, 'money');
+          } else {
+            showToast('😢 所持金が足りません', 'warn');
+          }
+          this.openCharacterDialogue(shopId, 'materials');
+        });
+      });
+      return;
+    }
+
+    box.querySelector('#dlg-talk')!.addEventListener('click', () => {
       const dayBefore = this.state.day;
       const result = performTalk(this.state, char.id);
-      panel.querySelector('#talk-line')!.textContent = `「${result.greeting}」`;
-      this.render();
+      const textEl = box.querySelector('#dlg-text');
+      if (textEl) textEl.textContent = `「${result.greeting}」`;
 
       if (result.leveledUp) showToast(`💖 ${char.name}の好感度がLv${result.newLevel}になった!`, 'love');
       if (result.eventUnlocked) showToast(`✨ ${char.name}が話したいことがあるみたい`, 'info');
@@ -257,6 +370,7 @@ export class Game {
       if (result.timeAdvanced) {
         showToast(`🕐 ${timeLabel(this.state.timeOfDay)}になった`, 'info');
         const dayChanged = this.state.day !== dayBefore;
+        this.hideDialogue();
         if (dayChanged) {
           openModal(`
             <h2>${escapeHtml(char.name)}と話した</h2>
@@ -265,36 +379,20 @@ export class Game {
             ${closeButtonHtml('おやすみ')}
           `);
           this.attachCloseHandlers();
-        } else {
-          closeModal();
         }
         if (this.state.endingSeen) setTimeout(() => this.showEnding(), 600);
         return;
       }
-      // 好感度・イベント状況が変わった可能性があるのでパネルを開き直す
-      this.openShop(shopId);
+      this.openCharacterDialogue(shopId, 'greet');
     });
 
-    const eventBtn = panel.querySelector('#btn-event');
-    if (eventBtn) {
-      eventBtn.addEventListener('click', () => this.openEventPanel(char.id));
-    }
+    const eventBtn = box.querySelector('#dlg-event');
+    if (eventBtn) eventBtn.addEventListener('click', () => this.openEventPanel(char.id));
 
-    panel.querySelectorAll<HTMLButtonElement>('[data-buy]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const materialId = btn.dataset.buy!;
-        const price = Number(btn.dataset.price);
-        if (buyMaterial(this.state, materialId, price, 1)) {
-          showToast(`🛒 ${getMaterial(materialId).name}を購入した`, 'money');
-          this.render();
-          this.openShop(shopId);
-        } else {
-          showToast('😢 所持金が足りません', 'warn');
-        }
-      });
-    });
+    const shopBtn = box.querySelector('#dlg-shop');
+    if (shopBtn) shopBtn.addEventListener('click', () => this.openCharacterDialogue(shopId, 'materials'));
 
-    this.attachCloseHandlers();
+    box.querySelector('#dlg-close')!.addEventListener('click', () => this.hideDialogue());
   }
 
   // ---------------------------------------------------------
@@ -329,7 +427,7 @@ export class Game {
           panel.querySelectorAll('[data-choice]').forEach((b) => b.setAttribute('disabled', 'true'));
           panel.querySelector('#event-result')!.innerHTML = this.eventGradeMessage(grade);
           this.handleEventGradeEffects(grade);
-          this.render();
+          this.openCharacterDialogue(getShopByCharacter(characterId).id, 'greet');
         });
       });
       this.attachCloseHandlers();
@@ -369,7 +467,7 @@ export class Game {
       (panel.querySelector('#mg-click') as HTMLButtonElement).setAttribute('disabled', 'true');
       panel.querySelector('#event-result')!.innerHTML = this.eventGradeMessage(grade);
       this.handleEventGradeEffects(grade);
-      this.render();
+      this.openCharacterDialogue(getShopByCharacter(characterId).id, 'greet');
     });
 
     this.attachCloseHandlers();
@@ -400,14 +498,14 @@ export class Game {
   }
 
   // ---------------------------------------------------------
-  // 調合(クラフト)
+  // 調合(キッチンシーン)
   // ---------------------------------------------------------
 
   private openCraftPanel(): void {
     const known = RECIPES.filter((r) => this.state.knownRecipeIds.includes(r.id));
     const shelfFull = this.state.shelf.length >= SHELF_CAPACITY;
     const panel = openModal(`
-      <h2>🍰 スイーツ調合</h2>
+      <h2>🍳 キッチン - スイーツ調合</h2>
       <p class="sub">陳列棚: ${this.state.shelf.length} / ${SHELF_CAPACITY}点 ${shelfFull ? '(満杯!自分の店で商品を整理しよう)' : ''}</p>
       <div class="list">
         ${known
@@ -443,24 +541,84 @@ export class Game {
         const recipeId = btn.dataset.craft!;
         const result = craftSweet(this.state, recipeId);
         const resultBox = panel.querySelector('#craft-result')!;
+
         if (!result.ok) {
           const msg = result.reason === 'shelf_full' ? '棚がいっぱいで並べられません。' : '作成できませんでした。';
           resultBox.innerHTML = `<p>${msg}</p>`;
-        } else if (result.success) {
-          resultBox.innerHTML = `<p>🎉 ${escapeHtml(getRecipe(recipeId).name)}が完成!<span class="rank-badge">${result.rank}</span> ${result.price}ベリーで棚に並べた!</p>`;
-          showToast(`🎉 ${getRecipe(recipeId).name}(${result.rank})が完成!`, 'success');
-          const mastery = this.state.recipeMastery[recipeId];
-          if (mastery && mastery.rankIndex >= 5) burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H / 2);
-        } else {
-          resultBox.innerHTML = `<p>😢 失敗してしまった……素材が無駄になった。</p>`;
-          showToast('😢 調合に失敗した……', 'warn');
+          return;
         }
-        this.render();
-        this.openCraftPanel();
+
+        panel.querySelectorAll<HTMLButtonElement>('[data-craft]').forEach((b) => b.setAttribute('disabled', 'true'));
+        resultBox.innerHTML = `<canvas id="mix-canvas" width="240" height="130"></canvas>`;
+        const mixCanvas = resultBox.querySelector('#mix-canvas') as HTMLCanvasElement;
+        this.runMixAnimation(mixCanvas, !!result.success, () => {
+          if (result.success) {
+            resultBox.innerHTML = `<p>🎉 ${escapeHtml(getRecipe(recipeId).name)}が完成!<span class="rank-badge">${result.rank}</span> ${result.price}ベリーで棚に並べた!</p>`;
+            showToast(`🎉 ${getRecipe(recipeId).name}(${result.rank})が完成!`, 'success');
+            const mastery = this.state.recipeMastery[recipeId];
+            if (mastery && mastery.rankIndex >= 5) burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H / 2);
+          } else {
+            resultBox.innerHTML = `<p>😢 失敗してしまった……素材が無駄になった。</p>`;
+            showToast('😢 調合に失敗した……', 'warn');
+          }
+          this.openCraftPanel();
+        });
       });
     });
 
     this.attachCloseHandlers();
+  }
+
+  /** ボウルが揺れて湯気があがる「調合中」演出。完了後に onDone を呼ぶ。 */
+  private runMixAnimation(canvas: HTMLCanvasElement, success: boolean, onDone: () => void): void {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      onDone();
+      return;
+    }
+    const start = performance.now();
+    const duration = 900;
+
+    const tick = (ts: number) => {
+      const elapsed = ts - start;
+      const t = Math.min(1, elapsed / duration);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const shakeX = Math.sin(elapsed / 35) * (1 - t) * 7;
+      ctx.save();
+      ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + 16);
+      ctx.fillStyle = '#f0d3de';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 62, 30, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#b3446c';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+
+      for (let i = 0; i < 6; i++) {
+        const cycle = (elapsed / 8 + i * 22) % 90;
+        const px = canvas.width / 2 + Math.sin(elapsed / 220 + i) * 16 + (i - 3) * 9;
+        const py = canvas.height / 2 - 6 - cycle;
+        const alpha = Math.max(0, 1 - cycle / 90);
+        ctx.fillStyle = `rgba(255,255,255,${alpha * 0.7})`;
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = '#8a5a3c';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(success ? '混ぜ混ぜ中...🥄' : '……あれ?', canvas.width / 2, canvas.height - 10);
+
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        onDone();
+      }
+    };
+    requestAnimationFrame(tick);
   }
 
   // ---------------------------------------------------------
@@ -533,7 +691,6 @@ export class Game {
     panel.querySelector('#btn-shift')!.addEventListener('click', () => {
       const result = runSalesShift(this.state);
       panel.querySelector('#shift-result')!.innerHTML = `<p>${result.customers}人来店 / ${result.itemsSold}個販売 / ${result.revenue}ベリーの売上</p>`;
-      this.render();
       if (result.itemsSold > 0) showToast(`💰 +${result.revenue}ベリーの売上!`, 'money');
       if (result.itemsSold >= 3) burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H * 0.3);
       this.openPlayerShop();
@@ -543,7 +700,6 @@ export class Game {
       btn.addEventListener('click', () => {
         const id = btn.dataset.remove!;
         this.state.shelf = this.state.shelf.filter((i) => i.id !== id);
-        this.render();
         this.openPlayerShop();
       });
     });
@@ -631,7 +787,6 @@ export class Game {
           box.innerHTML = `<p>惜しくも敗退……</p>`;
           showToast('惜しくも敗退……また挑戦しよう', 'warn');
         }
-        this.render();
         if (this.state.endingSeen) {
           setTimeout(() => this.showEnding(), 600);
         } else {
@@ -648,6 +803,7 @@ export class Game {
   // ---------------------------------------------------------
 
   private showEnding(): void {
+    this.stopLoop();
     closeModal();
     this.overlay.innerHTML = '';
     const screen = document.createElement('div');
