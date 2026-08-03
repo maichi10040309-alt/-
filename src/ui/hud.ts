@@ -29,7 +29,7 @@ export function buildHud(topBar: HTMLElement, bottomBar: HTMLElement, handlers: 
   renderTopBar(topBar, null);
 }
 
-export function renderTopBar(topBar: HTMLElement, state: GameState | null): void {
+export function renderTopBar(topBar: HTMLElement, state: GameState | null, floor?: number): void {
   if (!state) {
     topBar.innerHTML = '';
     return;
@@ -39,11 +39,13 @@ export function renderTopBar(topBar: HTMLElement, state: GameState | null): void
     state.currentMonthPlayerSales === 0 && state.currentMonthRivalSales === 0
       ? ''
       : `<span class="hud-chip ${leading ? 'hud-chip-lead' : 'hud-chip-behind'}">${leading ? '🥇 首位' : '🥈 2位'}(${state.currentMonthPlayerSales} vs ${state.currentMonthRivalSales})</span>`;
+  const floorChip = floor !== undefined ? `<span class="hud-chip hud-chip-floor">🏢 ${floor}F</span>` : '';
 
   topBar.innerHTML = `
     <span class="hud-chip">${state.day}日目</span>
     <span class="hud-chip">${timeLabel(state.timeOfDay)}</span>
     <span class="hud-chip">💰 ${state.money}ベリー</span>
+    ${floorChip}
     ${rankChip}
     <span class="hud-spacer"></span>
     <span class="hud-chip">🏆 コンテスト段階: ${state.contestStageCleared}/5</span>

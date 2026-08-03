@@ -9,13 +9,13 @@ import { enterContest, previewWinProbability } from '@/systems/contestSystem';
 import { getPendingEvent, resolveConsultationEvent, resolveMinigameEvent } from '@/systems/eventSystem';
 
 import { CHARACTERS, getCharacter } from '@/data/characters';
-import { getShop, getShopByCharacter } from '@/data/shops';
+import { getShop, getShopByCharacter, FLOORS, PLAYER_HOME_FLOOR, getShopsOnFloor } from '@/data/shops';
 import { MATERIALS, getMaterial } from '@/data/materials';
 import { RECIPES, getRecipe, rankLabel } from '@/data/recipes';
 import { CONTEST_STAGES, getContestStage } from '@/data/contest';
 
 import { initOverlay, openModal, closeModal, closeButtonHtml, escapeHtml } from '@/ui/panels';
-import { renderMap, hitTestMap, getStandingSpot, PLAYER_HOME_SPOT, CANVAS_W, CANVAS_H, type PlayerSprite } from '@/ui/mapRenderer';
+import { renderMap, hitTestMap, getStandingSpot, PLAYER_HOME_SPOT, ELEVATOR_SPOT, CANVAS_W, CANVAS_H, type PlayerSprite } from '@/ui/mapRenderer';
 import { buildHud, renderTopBar } from '@/ui/hud';
 import { drawCharacterAvatar, drawSweetIcon } from '@/ui/pixelArt';
 import { initEffects, showToast, burstConfetti } from '@/ui/effects';
@@ -44,6 +44,7 @@ export class Game {
   private animClock = 0;
   private lastTs = 0;
   private rafId: number | null = null;
+  private currentFloor = PLAYER_HOME_FLOOR;
 
   constructor(canvas: HTMLCanvasElement, overlay: HTMLElement) {
     this.canvas = canvas;
@@ -63,6 +64,19 @@ export class Game {
     initEffects(overlay);
 
     this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
+
+    // #game-root は overflow:hidden で角丸クリップしているだけで本来スクロール
+    // させたくないが、モーダル内のボタンにフォーカスが移ると一部ブラウザ/自動化
+    // ツールが「フォーカス要素を表示範囲内へ」と game-root を暗黙のスクロール
+    // コンテナとして扱い scrollTop を書き換えてしまうことがある。描画内容が
+    // ずれるのを防ぐため、スクロールが発生したら即座に 0 へ戻す。
+    const gameRoot = this.canvas.parentElement;
+    if (gameRoot) {
+      gameRoot.addEventListener('scroll', () => {
+        gameRoot.scrollTop = 0;
+        gameRoot.scrollLeft = 0;
+      });
+    }
   }
 
   start(): void {
@@ -129,7 +143,7 @@ export class Game {
     const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
     const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
     this.hideDialogue();
-    const hit = hitTestMap(x, y);
+    const hit = hitTestMap(x, y, this.currentFloor);
     if (!hit) {
       this.walkTo({ x, y });
       return;
@@ -137,6 +151,7 @@ export class Game {
     const spot = getStandingSpot(hit);
     this.walkTo(spot, () => {
       if (hit.type === 'player_shop') this.openPlayerShop();
+      else if (hit.type === 'elevator') this.openFloorSelect();
       else this.openCharacterDialogue(hit.id);
     });
   }
@@ -146,8 +161,8 @@ export class Game {
   // ---------------------------------------------------------
 
   private render(): void {
-    renderMap(this.ctx, this.state, this.animClock, this.player);
-    renderTopBar(this.topBar, this.state);
+    renderMap(this.ctx, this.state, this.currentFloor, this.animClock, this.player);
+    renderTopBar(this.topBar, this.state, this.currentFloor);
   }
 
   /** モーダル/会話ボックスHTML内の <canvas data-avatar> / <canvas data-sweet> にアイコンを描画する */
@@ -185,8 +200,51 @@ export class Game {
       onSave: () => this.doSave(),
     });
     this.dayStartMoney = this.state.money;
+    this.currentFloor = PLAYER_HOME_FLOOR;
     this.player = { x: PLAYER_HOME_SPOT.x, y: PLAYER_HOME_SPOT.y, targetX: PLAYER_HOME_SPOT.x, targetY: PLAYER_HOME_SPOT.y, moving: false };
     this.startLoop();
+  }
+
+  // ---------------------------------------------------------
+  // エレベーター(フロア移動)
+  // ---------------------------------------------------------
+
+  private openFloorSelect(): void {
+    const panel = openModal(`
+      <h2>🛗 エレベーター</h2>
+      <p>行き先の階を選んでください。</p>
+      <div class="list">
+        ${FLOORS.map((f) => {
+          const isHere = f.floor === this.currentFloor;
+          const sub = f.floor === PLAYER_HOME_FLOOR ? 'あなたのお店' : `${getShopsOnFloor(f.floor).length}店舗`;
+          return `
+          <div class="card">
+            <div class="info"><div class="title">${escapeHtml(f.name)}</div><div class="sub">${sub}</div></div>
+            <button data-floor="${f.floor}" ${isHere ? 'disabled' : ''}>${isHere ? '現在地' : '移動する'}</button>
+          </div>`;
+        }).join('')}
+      </div>
+      ${closeButtonHtml()}
+    `);
+    panel.querySelectorAll<HTMLButtonElement>('[data-floor]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.changeFloor(Number(btn.dataset.floor));
+        closeModal();
+      });
+    });
+    this.attachCloseHandlers();
+  }
+
+  private changeFloor(floor: number): void {
+    this.currentFloor = floor;
+    this.player.x = ELEVATOR_SPOT.x;
+    this.player.y = ELEVATOR_SPOT.y;
+    this.player.targetX = ELEVATOR_SPOT.x;
+    this.player.targetY = ELEVATOR_SPOT.y;
+    this.player.moving = false;
+    this.hideDialogue();
+    const label = FLOORS.find((f) => f.floor === floor)?.name ?? `${floor}F`;
+    showToast(`🛗 ${label}に到着`, 'info');
   }
 
   // ---------------------------------------------------------

@@ -26,7 +26,7 @@ html, body {
   max-width: 100%;
   aspect-ratio: 960 / 540;
   border-radius: 18px;
-  overflow: hidden;
+  overflow: clip;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   background: #fff7ef;
 }
@@ -371,6 +371,12 @@ button:disabled {
   background: #ffe0e0cc;
   border-color: #e0776b;
   color: #9c3b2e;
+}
+
+.hud-chip-floor {
+  background: #e0d6ffcc;
+  border-color: #a68be0;
+  color: #5a3f8a;
 }
 
 /* ---- 日次サマリー ---- */

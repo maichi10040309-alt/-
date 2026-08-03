@@ -13,6 +13,7 @@ export interface ShopDef {
   name: string;
   type: ShopType;
   characterId: string;
+  floor: number;
   gridX: number;
   gridY: number;
 }
