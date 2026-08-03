@@ -455,7 +455,7 @@ button:disabled {
   opacity: 0;
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1.1), opacity 0.18s ease;
   pointer-events: none !important;
-  max-height: 190px;
+  max-height: 250px;
   visibility: hidden;
 }
 
@@ -468,8 +468,8 @@ button:disabled {
 
 .dialogue-box .dlg-portrait {
   flex-shrink: 0;
-  width: 84px;
-  height: 120px;
+  width: 156px;
+  height: 218px;
 }
 
 .dialogue-box .dlg-body {

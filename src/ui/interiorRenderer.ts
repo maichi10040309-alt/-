@@ -104,9 +104,9 @@ export function renderShopInterior(
 
   // キャラクター(固定位置に立っていて、idleでゆっくり揺れる)
   const bob = Math.sin(animClock * 1.3) * 2;
-  drawShadow(ctx, layout.characterSpot.x, layout.characterSpot.y + 8, 66);
+  drawShadow(ctx, layout.characterSpot.x, layout.characterSpot.y + 8, 30);
   const charImg = getImage(CHARACTER_PORTRAITS[char.portrait]);
-  drawSpriteAtFeet(ctx, charImg, layout.characterSpot.x, layout.characterSpot.y + bob, 96);
+  drawSpriteAtFeet(ctx, charImg, layout.characterSpot.x, layout.characterSpot.y + bob, 46);
 
   // プレイヤー
   const playerImg = getImage(CHARACTER_PORTRAITS.strawberry);
