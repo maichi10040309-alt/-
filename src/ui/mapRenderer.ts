@@ -290,23 +290,53 @@ function renderHallFloor(ctx: CanvasRenderingContext2D, state: GameState, isNigh
     ctx.restore();
   }
 
-  // いちごケーキ店(プレイヤーの店)の入口を光らせて誘導する
-  const glowSpot = hallToCanvas(layout, (HALL_SHOP_HIT.x0 + HALL_SHOP_HIT.x1) / 2, HALL_SHOP_HIT.y0 + 6);
+  // いちごケーキ店(プレイヤーの店)を大きく目立たせて誘導する
+  const doorCenterX = hallToCanvas(layout, (HALL_SHOP_HIT.x0 + HALL_SHOP_HIT.x1) / 2, 0).x;
+  const doorTopY = hallToCanvas(layout, 0, HALL_SHOP_HIT.y0).y;
+  const doorBottomY = hallToCanvas(layout, 0, HALL_SHOP_HIT.y1).y;
+  const doorLeftX = hallToCanvas(layout, HALL_SHOP_HIT.x0, 0).x;
+  const doorRightX = hallToCanvas(layout, HALL_SHOP_HIT.x1, 0).x;
+  const pulse = 0.55 + Math.sin(performance.now() / 380) * 0.25;
+
   ctx.save();
-  ctx.globalAlpha = 0.55 + Math.sin(performance.now() / 400) * 0.15;
-  ctx.shadowColor = '#ff9ec4';
-  ctx.shadowBlur = 14;
-  ctx.fillStyle = '#fff2f7';
-  ctx.beginPath();
-  ctx.arc(glowSpot.x, glowSpot.y, 5, 0, Math.PI * 2);
+  ctx.globalAlpha = pulse;
+  ctx.shadowColor = '#ff5f96';
+  ctx.shadowBlur = 22;
+  ctx.strokeStyle = '#ff5f96';
+  ctx.lineWidth = 4;
+  roundRect(ctx, doorLeftX, doorTopY, doorRightX - doorLeftX, doorBottomY - doorTopY, 14);
+  ctx.stroke();
+  ctx.restore();
+
+  // 頭上でぴょんぴょん跳ねる案内マーカー
+  const bounce = Math.abs(Math.sin(performance.now() / 320)) * 8;
+  const markerY = doorTopY - 14 - bounce;
+  ctx.save();
+  ctx.font = '22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('📍', doorCenterX, markerY);
+  ctx.restore();
+
+  // 「あなたのお店」バッジ
+  ctx.save();
+  ctx.font = 'bold 12px sans-serif';
+  const badgeText = '🏠 あなたのお店';
+  const badgeW = ctx.measureText(badgeText).width + 20;
+  const badgeX = doorCenterX - badgeW / 2;
+  const badgeY = doorTopY - 58;
+  ctx.fillStyle = '#ff5f96';
+  roundRect(ctx, badgeX, badgeY, badgeW, 22, 11);
   ctx.fill();
+  ctx.fillStyle = '#fffaf3';
+  ctx.textAlign = 'center';
+  ctx.fillText(badgeText, doorCenterX, badgeY + 15);
   ctx.restore();
 
   ctx.textAlign = 'center';
   ctx.fillStyle = isNight ? '#ffe6f4' : '#4a2c2a';
-  ctx.font = 'bold 12px sans-serif';
+  ctx.font = 'bold 13px sans-serif';
   const shopLabelSpot = hallToCanvas(layout, HALL_SHOP_SPOT_NATURAL.x, HALL_SHOP_HIT.y1 + 14);
-  ctx.fillText(PLAYER_SHOP.name, shopLabelSpot.x, shopLabelSpot.y);
+  ctx.fillText(`① ${PLAYER_SHOP.name}`, shopLabelSpot.x, shopLabelSpot.y);
   ctx.font = '10px sans-serif';
   ctx.fillText(`棚: ${state.shelf.length}点`, shopLabelSpot.x, shopLabelSpot.y + 13);
 

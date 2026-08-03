@@ -31,7 +31,7 @@ export function talkToCharacter(state: GameState, characterId: string): TalkResu
     eventUnlocked = true;
   }
 
-  const greeting = char.greetings[affinity.level - 1];
+  const greeting = char.talkLines[affinity.level - 1];
   addLog(state, `${char.name}と会話した。「${greeting}」`);
   if (leveledUp) {
     addLog(state, `${char.name}との好感度がLv${affinity.level}になった!`);

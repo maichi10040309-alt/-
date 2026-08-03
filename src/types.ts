@@ -26,7 +26,10 @@ export interface CharacterDef {
   favoriteMaterialId: string;
   color: string;
   portrait: string;
+  // 店内でキャラクターに近づいた(タッチした)ときの第一声
   greetings: [string, string, string, string, string];
+  // 「話しかける」ボタンを押したときの一言(greetingsとは別内容)
+  talkLines: [string, string, string, string, string];
 }
 
 export type MaterialCategory = 'grain' | 'dairy' | 'fruit' | 'sweetener' | 'flavor' | 'rare';

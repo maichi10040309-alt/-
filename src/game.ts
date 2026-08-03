@@ -416,7 +416,7 @@ export class Game {
   // キャラクター会話(マップ下部のビジュアルノベル風ダイアログ)
   // ---------------------------------------------------------
 
-  private openCharacterDialogue(shopId: string, view: 'greet' | 'materials' | 'books' = 'greet'): void {
+  private openCharacterDialogue(shopId: string, view: 'greet' | 'materials' | 'books' = 'greet', overrideGreetingText?: string): void {
     const shop = getShop(shopId);
     const char = getCharacter(shop.characterId);
     const affinity = this.state.characterAffinity[char.id];
@@ -466,7 +466,7 @@ export class Game {
     } else {
       bodyHtml = `
         <div class="dlg-name">${escapeHtml(char.name)} <span class="dlg-sub">好感度 Lv${affinity.level}/5 ${'♥'.repeat(affinity.level)}${'♡'.repeat(5 - affinity.level)}</span></div>
-        <div class="dlg-text" id="dlg-text">「${escapeHtml(char.greetings[affinity.level - 1])}」</div>
+        <div class="dlg-text" id="dlg-text">「${escapeHtml(overrideGreetingText ?? char.greetings[affinity.level - 1])}」</div>
         <div class="dlg-actions">
           <button id="dlg-talk">話しかける</button>
           ${pending ? `<button id="dlg-event">✨ ${escapeHtml(pending.templateTitle)}</button>` : ''}
@@ -522,8 +522,6 @@ export class Game {
     box.querySelector('#dlg-talk')!.addEventListener('click', () => {
       const dayBefore = this.state.day;
       const result = performTalk(this.state, char.id);
-      const textEl = box.querySelector('#dlg-text');
-      if (textEl) textEl.textContent = `「${result.greeting}」`;
 
       if (result.leveledUp) showToast(`💖 ${char.name}の好感度がLv${result.newLevel}になった!`, 'love');
       if (result.eventUnlocked) showToast(`✨ ${char.name}が話したいことがあるみたい`, 'info');
@@ -544,7 +542,7 @@ export class Game {
         if (this.state.endingSeen) setTimeout(() => this.showEnding(), 600);
         return;
       }
-      this.openCharacterDialogue(shopId, 'greet');
+      this.openCharacterDialogue(shopId, 'greet', result.greeting);
     });
 
     const eventBtn = box.querySelector('#dlg-event');
