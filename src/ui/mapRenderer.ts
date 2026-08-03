@@ -1,7 +1,7 @@
 import type { GameState } from '@/types';
 import { SHOPS, PLAYER_SHOP, FLOORS, getShopsOnFloor } from '@/data/shops';
 import { getCharacter } from '@/data/characters';
-import { CHARACTER_PORTRAITS, SHOP_BUILDING_IMAGES } from '@/data/imageAssets';
+import { CHARACTER_PORTRAITS, SHOP_BUILDING_IMAGES, DEPARTMENT_HALL_IMAGE } from '@/data/imageAssets';
 import { getImage, drawSpriteAtFeet, drawImageFitBottom } from './imageCache';
 import { drawShadow } from './pixelArt';
 
@@ -13,12 +13,52 @@ const GRID_TOP = 110;
 const CELL_W = 280;
 const CELL_H = 190;
 
-const PLAYER_SHOP_X = CANVAS_W / 2 - 110;
-const PLAYER_SHOP_Y = 130;
-const PLAYER_SHOP_W = 220;
-const PLAYER_SHOP_H = 160;
-
 export const ELEVATOR_RECT = { x: CANVAS_W - 150, y: 120, w: 100, h: 200 };
+
+// 1F(エントランス)は「デパート内観(中央ホール)」の実イラストを背景に使い、
+// 画像上の自然座標系(870x315)で入口/エスカレーターの当たり判定を定義する。
+const HALL_MARGIN_X = 20;
+const HALL_MARGIN_TOP = 66;
+const HALL_MARGIN_BOTTOM = 90;
+
+interface HallLayout {
+  imgX: number;
+  imgY: number;
+  imgW: number;
+  imgH: number;
+  scale: number;
+}
+
+function computeHallLayout(): HallLayout {
+  const img = getImage(DEPARTMENT_HALL_IMAGE);
+  const naturalW = img.naturalWidth || 870;
+  const naturalH = img.naturalHeight || 315;
+  const maxW = CANVAS_W - HALL_MARGIN_X * 2;
+  const maxH = CANVAS_H - HALL_MARGIN_TOP - HALL_MARGIN_BOTTOM;
+  const scale = Math.min(maxW / naturalW, maxH / naturalH);
+  const imgW = naturalW * scale;
+  const imgH = naturalH * scale;
+  const imgX = (CANVAS_W - imgW) / 2;
+  const imgY = HALL_MARGIN_TOP + (maxH - imgH) / 2;
+  return { imgX, imgY, imgW, imgH, scale };
+}
+
+function hallToCanvas(layout: HallLayout, nx: number, ny: number): { x: number; y: number } {
+  return { x: layout.imgX + nx * layout.scale, y: layout.imgY + ny * layout.scale };
+}
+
+// 画像内(870x315)でのいちごケーキ店の入口/立ち位置、エスカレーターの当たり判定
+const HALL_SHOP_HIT = { x0: 12, y0: 30, x1: 155, y1: 150 };
+const HALL_SHOP_SPOT_NATURAL = { x: 95, y: 152 };
+const HALL_ESCALATOR_HIT = { x0: 325, y0: 230, x1: 510, y1: 315 };
+const HALL_ESCALATOR_SPOT_NATURAL = { x: 420, y: 258 };
+// 装飾のみ(データ上の店舗が無いため非クリック)の他テナント扉のラベル位置
+const HALL_DECOR_DOORS = [
+  { num: 2, x: 250, y: 55 },
+  { num: 3, x: 585, y: 55 },
+  { num: 4, x: 700, y: 65 },
+  { num: 5, x: 800, y: 75 },
+];
 
 export interface PlayerSprite {
   x: number;
@@ -52,14 +92,20 @@ function phaseFor(id: string): number {
 export type MapHit = { type: 'shop'; id: string } | { type: 'player_shop' } | { type: 'elevator' } | null;
 
 export function hitTestMap(x: number, y: number, floor: number): MapHit {
-  if (x >= ELEVATOR_RECT.x && x <= ELEVATOR_RECT.x + ELEVATOR_RECT.w && y >= ELEVATOR_RECT.y && y <= ELEVATOR_RECT.y + ELEVATOR_RECT.h) {
-    return { type: 'elevator' };
-  }
   if (floor === 1) {
-    if (x >= PLAYER_SHOP_X && x <= PLAYER_SHOP_X + PLAYER_SHOP_W && y >= PLAYER_SHOP_Y && y <= PLAYER_SHOP_Y + PLAYER_SHOP_H) {
+    const layout = computeHallLayout();
+    const nx = (x - layout.imgX) / layout.scale;
+    const ny = (y - layout.imgY) / layout.scale;
+    if (nx >= HALL_SHOP_HIT.x0 && nx <= HALL_SHOP_HIT.x1 && ny >= HALL_SHOP_HIT.y0 && ny <= HALL_SHOP_HIT.y1) {
       return { type: 'player_shop' };
     }
+    if (nx >= HALL_ESCALATOR_HIT.x0 && nx <= HALL_ESCALATOR_HIT.x1 && ny >= HALL_ESCALATOR_HIT.y0 && ny <= HALL_ESCALATOR_HIT.y1) {
+      return { type: 'elevator' };
+    }
     return null;
+  }
+  if (x >= ELEVATOR_RECT.x && x <= ELEVATOR_RECT.x + ELEVATOR_RECT.w && y >= ELEVATOR_RECT.y && y <= ELEVATOR_RECT.y + ELEVATOR_RECT.h) {
+    return { type: 'elevator' };
   }
   for (const shop of getShopsOnFloor(floor)) {
     const r = shopRect(shop.gridX, shop.gridY);
@@ -71,20 +117,33 @@ export function hitTestMap(x: number, y: number, floor: number): MapHit {
 }
 
 /** クリックされた店/設備の「立ち位置」(プレイヤーが歩いていく目的地)を返す */
-export function getStandingSpot(hit: MapHit): { x: number; y: number } {
+export function getStandingSpot(hit: MapHit, floor = 1): { x: number; y: number } {
   if (!hit) return { x: CANVAS_W / 2, y: CANVAS_H / 2 };
+  if (floor === 1 && (hit.type === 'elevator' || hit.type === 'player_shop')) {
+    const layout = computeHallLayout();
+    const natural = hit.type === 'elevator' ? HALL_ESCALATOR_SPOT_NATURAL : HALL_SHOP_SPOT_NATURAL;
+    return hallToCanvas(layout, natural.x, natural.y);
+  }
   if (hit.type === 'elevator') {
     return { x: ELEVATOR_RECT.x + ELEVATOR_RECT.w / 2, y: ELEVATOR_RECT.y + ELEVATOR_RECT.h + 16 };
   }
   if (hit.type === 'player_shop') {
-    return { x: PLAYER_SHOP_X + PLAYER_SHOP_W / 2, y: PLAYER_SHOP_Y + PLAYER_SHOP_H + 16 };
+    return getHallShopSpot();
   }
   const shop = SHOPS.find((s) => s.id === hit.id)!;
   const r = shopRect(shop.gridX, shop.gridY);
   return { x: r.x + r.w / 2, y: Math.min(r.y + r.h + 14, CANVAS_H - 60) };
 }
 
-export const PLAYER_HOME_SPOT = { x: PLAYER_SHOP_X + PLAYER_SHOP_W / 2, y: PLAYER_SHOP_Y + PLAYER_SHOP_H + 16 };
+export function getHallShopSpot(): { x: number; y: number } {
+  return hallToCanvas(computeHallLayout(), HALL_SHOP_SPOT_NATURAL.x, HALL_SHOP_SPOT_NATURAL.y);
+}
+
+export function getHallEscalatorSpot(): { x: number; y: number } {
+  return hallToCanvas(computeHallLayout(), HALL_ESCALATOR_SPOT_NATURAL.x, HALL_ESCALATOR_SPOT_NATURAL.y);
+}
+
+export const PLAYER_HOME_SPOT = getHallShopSpot();
 export const ELEVATOR_SPOT = { x: ELEVATOR_RECT.x + ELEVATOR_RECT.w / 2, y: ELEVATOR_RECT.y + ELEVATOR_RECT.h + 16 };
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -220,6 +279,50 @@ function drawElevator(ctx: CanvasRenderingContext2D, isNight: boolean): void {
   ctx.fillText('エレベーター', x + w / 2, y + h + 16 - 20);
 }
 
+function renderHallFloor(ctx: CanvasRenderingContext2D, state: GameState, isNight: boolean): void {
+  const layout = computeHallLayout();
+  const img = getImage(DEPARTMENT_HALL_IMAGE);
+  if (img.complete && img.naturalWidth) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = 20;
+    ctx.drawImage(img, layout.imgX, layout.imgY, layout.imgW, layout.imgH);
+    ctx.restore();
+  }
+
+  // いちごケーキ店(プレイヤーの店)の入口を光らせて誘導する
+  const glowSpot = hallToCanvas(layout, (HALL_SHOP_HIT.x0 + HALL_SHOP_HIT.x1) / 2, HALL_SHOP_HIT.y0 + 6);
+  ctx.save();
+  ctx.globalAlpha = 0.55 + Math.sin(performance.now() / 400) * 0.15;
+  ctx.shadowColor = '#ff9ec4';
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = '#fff2f7';
+  ctx.beginPath();
+  ctx.arc(glowSpot.x, glowSpot.y, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = isNight ? '#ffe6f4' : '#4a2c2a';
+  ctx.font = 'bold 12px sans-serif';
+  const shopLabelSpot = hallToCanvas(layout, HALL_SHOP_SPOT_NATURAL.x, HALL_SHOP_HIT.y1 + 14);
+  ctx.fillText(PLAYER_SHOP.name, shopLabelSpot.x, shopLabelSpot.y);
+  ctx.font = '10px sans-serif';
+  ctx.fillText(`棚: ${state.shelf.length}点`, shopLabelSpot.x, shopLabelSpot.y + 13);
+
+  const escLabelSpot = hallToCanvas(layout, HALL_ESCALATOR_SPOT_NATURAL.x, HALL_ESCALATOR_HIT.y0 - 8);
+  ctx.fillStyle = isNight ? '#e6c9e0' : '#8a5a3c';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('エスカレーターで各階へ', escLabelSpot.x, escLabelSpot.y);
+
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = isNight ? 'rgba(255,255,255,0.6)' : 'rgba(80,50,40,0.55)';
+  for (const door of HALL_DECOR_DOORS) {
+    const p = hallToCanvas(layout, door.x, door.y);
+    ctx.fillText('準備中', p.x, p.y);
+  }
+}
+
 export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor: number, animClock: number, player: PlayerSprite): void {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   drawBackground(ctx, state.timeOfDay);
@@ -231,27 +334,13 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor
   ctx.fillStyle = isNight ? '#ffd6e8' : '#b3446c';
   ctx.fillText(floorLabel(floor), CANVAS_W / 2, 36);
 
-  drawElevator(ctx, isNight);
-
   if (floor === 1) {
-    ctx.fillStyle = isNight ? 'rgba(60,40,70,0.55)' : 'rgba(255,255,255,0.6)';
-    roundRect(ctx, PLAYER_SHOP_X, PLAYER_SHOP_Y, PLAYER_SHOP_W, PLAYER_SHOP_H, 16);
-    ctx.fill();
-    ctx.strokeStyle = '#ffd166';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    const shopImg = getImage(SHOP_BUILDING_IMAGES[PLAYER_SHOP.portrait]);
-    drawImageFitBottom(ctx, shopImg, PLAYER_SHOP_X + 12, PLAYER_SHOP_Y + 8, PLAYER_SHOP_W - 24, PLAYER_SHOP_H - 46);
-    ctx.fillStyle = isNight ? '#ffe6f4' : '#4a2c2a';
-    ctx.font = 'bold 15px sans-serif';
-    ctx.fillText(PLAYER_SHOP.name, PLAYER_SHOP_X + PLAYER_SHOP_W / 2, PLAYER_SHOP_Y + PLAYER_SHOP_H - 24);
-    ctx.font = '11px sans-serif';
-    ctx.fillText(`棚: ${state.shelf.length}点`, PLAYER_SHOP_X + PLAYER_SHOP_W / 2, PLAYER_SHOP_Y + PLAYER_SHOP_H - 8);
-
-    ctx.fillStyle = isNight ? '#e6c9e0' : '#8a5a3c';
-    ctx.font = '13px sans-serif';
-    ctx.fillText('エレベーターで各階のお店へ行けます', CANVAS_W / 2 - 60, CANVAS_H - 70);
+    renderHallFloor(ctx, state, isNight);
   } else {
+    drawElevator(ctx, isNight);
+  }
+
+  if (floor !== 1) {
     for (const shop of getShopsOnFloor(floor)) {
       const r = shopRect(shop.gridX, shop.gridY);
       const char = getCharacter(shop.characterId);

@@ -61,6 +61,25 @@ export const CHARACTER_PORTRAITS: Record<string, string> = {
   vanilla,
 };
 
+import strawberryRoom from '@/assets/interiors/strawberry_room.png';
+import whiteRoom from '@/assets/interiors/white_room.png';
+import bitterRoom from '@/assets/interiors/bitter_room.png';
+import milkRoom from '@/assets/interiors/milk_room.png';
+import matchaRoom from '@/assets/interiors/matcha_room.png';
+import crunchRoom from '@/assets/interiors/crunch_room.png';
+import marronRoom from '@/assets/interiors/marron_room.png';
+import champagneRoom from '@/assets/interiors/champagne_room.png';
+import pecheRoom from '@/assets/interiors/peche_room.png';
+import pommeRoom from '@/assets/interiors/pomme_room.png';
+import almondRoom from '@/assets/interiors/almond_room.png';
+import honeyRoom from '@/assets/interiors/honey_room.png';
+import caramelRoom from '@/assets/interiors/caramel_room.png';
+import blueberryRoom from '@/assets/interiors/blueberry_room.png';
+import mapleRoom from '@/assets/interiors/maple_room.png';
+import cinnamonRoom from '@/assets/interiors/cinnamon_room.png';
+import lemonRoom from '@/assets/interiors/lemon_room.png';
+import vanillaRoom from '@/assets/interiors/vanilla_room.png';
+
 export const SHOP_BUILDING_IMAGES: Record<string, string> = {
   strawberry: strawberryShop,
   white: whiteShop,
@@ -80,4 +99,33 @@ export const SHOP_BUILDING_IMAGES: Record<string, string> = {
   cinnamon: cinnamonShop,
   lemon: lemonShop,
   vanilla: vanillaShop,
+};
+
+// 店内マップ(16×12想定のトップビュー背景)。ユーザー提供の店舗内装イラストのうち、
+// キャラクター名と一致するものをそのまま使用し、一致するものがない6店舗
+// (アーモンド/ハニー/キャラメル/シナモン/レモン/バニラ)は雰囲気の近い内装を
+// 仮素材として割り当てている(専用素材が届き次第差し替え可能)。
+import departmentHall from '@/assets/halls/department_hall.jpg';
+
+export const DEPARTMENT_HALL_IMAGE: string = departmentHall;
+
+export const SHOP_ROOM_IMAGES: Record<string, string> = {
+  strawberry: strawberryRoom,
+  white: whiteRoom,
+  bitter: bitterRoom,
+  milk: milkRoom,
+  matcha: matchaRoom,
+  crunch: crunchRoom,
+  marron: marronRoom,
+  champagne: champagneRoom,
+  peche: pecheRoom,
+  pomme: pommeRoom,
+  almond: almondRoom,
+  honey: honeyRoom,
+  caramel: caramelRoom,
+  blueberry: blueberryRoom,
+  maple: mapleRoom,
+  cinnamon: cinnamonRoom,
+  lemon: lemonRoom,
+  vanilla: vanillaRoom,
 };

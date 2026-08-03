@@ -16,7 +16,8 @@ import { CONTEST_STAGES, getContestStage } from '@/data/contest';
 import { CHARACTER_PORTRAITS } from '@/data/imageAssets';
 
 import { initOverlay, openModal, closeModal, closeButtonHtml, escapeHtml } from '@/ui/panels';
-import { renderMap, hitTestMap, getStandingSpot, PLAYER_HOME_SPOT, ELEVATOR_SPOT, CANVAS_W, CANVAS_H, type PlayerSprite } from '@/ui/mapRenderer';
+import { renderMap, hitTestMap, getStandingSpot, PLAYER_HOME_SPOT, ELEVATOR_SPOT, getHallEscalatorSpot, CANVAS_W, CANVAS_H, type PlayerSprite } from '@/ui/mapRenderer';
+import { renderShopInterior, computeInteriorLayout, hitTestInterior, clampToInterior } from '@/ui/interiorRenderer';
 import { buildHud, renderTopBar } from '@/ui/hud';
 import { drawSweetIcon } from '@/ui/pixelArt';
 import { initEffects, showToast, burstConfetti, playElevatorTransition } from '@/ui/effects';
@@ -53,6 +54,7 @@ export class Game {
   private lastTs = 0;
   private rafId: number | null = null;
   private currentFloor = PLAYER_HOME_FLOOR;
+  private insideShopId: string | null = null;
 
   constructor(canvas: HTMLCanvasElement, overlay: HTMLElement) {
     this.canvas = canvas;
@@ -151,17 +153,69 @@ export class Game {
     const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
     const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
     this.hideDialogue();
+
+    if (this.insideShopId) {
+      this.handleInteriorClick(x, y);
+      return;
+    }
+
     const hit = hitTestMap(x, y, this.currentFloor);
     if (!hit) {
       this.walkTo({ x, y });
       return;
     }
-    const spot = getStandingSpot(hit);
+    const spot = getStandingSpot(hit, this.currentFloor);
     this.walkTo(spot, () => {
       if (hit.type === 'player_shop') this.openPlayerShop();
       else if (hit.type === 'elevator') this.openFloorSelect();
-      else this.openCharacterDialogue(hit.id);
+      else this.enterShopInterior(hit.id);
     });
+  }
+
+  private handleInteriorClick(x: number, y: number): void {
+    const shopId = this.insideShopId;
+    if (!shopId) return;
+    const char = getCharacter(getShop(shopId).characterId);
+    const layout = computeInteriorLayout(char.portrait);
+    const hit = hitTestInterior(x, y, layout);
+
+    if (hit?.type === 'exit') {
+      this.walkTo(layout.entrance, () => this.exitShopInterior());
+      return;
+    }
+    if (hit?.type === 'character') {
+      this.walkTo(layout.characterSpot, () => this.openCharacterDialogue(shopId));
+      return;
+    }
+    this.walkTo(clampToInterior(x, y, layout));
+  }
+
+  // ---------------------------------------------------------
+  // 店舗の内装(店内マップを歩き回れるシーン)
+  // ---------------------------------------------------------
+
+  private enterShopInterior(shopId: string): void {
+    const char = getCharacter(getShop(shopId).characterId);
+    const layout = computeInteriorLayout(char.portrait);
+    this.insideShopId = shopId;
+    this.player.x = layout.entrance.x;
+    this.player.y = layout.entrance.y;
+    this.player.targetX = layout.entrance.x;
+    this.player.targetY = layout.entrance.y;
+    this.player.moving = false;
+    this.hideDialogue();
+  }
+
+  private exitShopInterior(): void {
+    if (!this.insideShopId) return;
+    const spot = getStandingSpot({ type: 'shop', id: this.insideShopId });
+    this.insideShopId = null;
+    this.player.x = spot.x;
+    this.player.y = spot.y;
+    this.player.targetX = spot.x;
+    this.player.targetY = spot.y;
+    this.player.moving = false;
+    this.hideDialogue();
   }
 
   // ---------------------------------------------------------
@@ -169,7 +223,12 @@ export class Game {
   // ---------------------------------------------------------
 
   private render(): void {
-    renderMap(this.ctx, this.state, this.currentFloor, this.animClock, this.player);
+    if (this.insideShopId) {
+      const char = getCharacter(getShop(this.insideShopId).characterId);
+      renderShopInterior(this.ctx, char.portrait, char, this.animClock, this.player);
+    } else {
+      renderMap(this.ctx, this.state, this.currentFloor, this.animClock, this.player);
+    }
     renderTopBar(this.topBar, this.state, this.currentFloor);
   }
 
@@ -201,6 +260,7 @@ export class Game {
     });
     this.dayStartMoney = this.state.money;
     this.currentFloor = PLAYER_HOME_FLOOR;
+    this.insideShopId = null;
     this.player = { x: PLAYER_HOME_SPOT.x, y: PLAYER_HOME_SPOT.y, targetX: PLAYER_HOME_SPOT.x, targetY: PLAYER_HOME_SPOT.y, moving: false };
     this.startLoop();
   }
@@ -211,7 +271,7 @@ export class Game {
 
   private openFloorSelect(): void {
     const panel = openModal(`
-      <h2>🛗 エレベーター</h2>
+      <h2>🛗 フロア移動</h2>
       <p>行き先の階を選んでください。</p>
       <div class="list">
         ${FLOORS.map((f) => {
@@ -238,10 +298,11 @@ export class Game {
 
   private changeFloor(floor: number): void {
     this.currentFloor = floor;
-    this.player.x = ELEVATOR_SPOT.x;
-    this.player.y = ELEVATOR_SPOT.y;
-    this.player.targetX = ELEVATOR_SPOT.x;
-    this.player.targetY = ELEVATOR_SPOT.y;
+    const spot = floor === 1 ? getHallEscalatorSpot() : ELEVATOR_SPOT;
+    this.player.x = spot.x;
+    this.player.y = spot.y;
+    this.player.targetX = spot.x;
+    this.player.targetY = spot.y;
     this.player.moving = false;
     this.hideDialogue();
     const label = FLOORS.find((f) => f.floor === floor)?.name ?? `${floor}F`;
