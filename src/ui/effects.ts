@@ -91,3 +91,73 @@ export function burstConfetti(canvas: HTMLCanvasElement, originX: number, origin
   }
   requestAnimationFrame(tick);
 }
+
+// 調整可能パラメータ: エレベーターの扉が閉まる/開く時間、閉まりきってからの間
+const ELEVATOR_CLOSE_MS = 260;
+const ELEVATOR_HOLD_MS = 150;
+const ELEVATOR_OPEN_MS = 280;
+
+/**
+ * エレベーターの扉が閉まる→(この間にonMidpointで階を切り替える)→開く、
+ * という画面転換演出。フロア移動を単なる瞬間切り替えではなく「移動した」
+ * という手触りにするための演出。
+ */
+export function playElevatorTransition(canvas: HTMLCanvasElement, onMidpoint: () => void): void {
+  const overlay = document.createElement('canvas');
+  overlay.width = canvas.width;
+  overlay.height = canvas.height;
+  overlay.style.position = 'absolute';
+  overlay.style.inset = '0';
+  overlay.style.width = '100%';
+  overlay.style.height = '100%';
+  overlay.style.pointerEvents = 'none';
+  canvas.parentElement?.appendChild(overlay);
+  const ctx = overlay.getContext('2d');
+  if (!ctx) {
+    onMidpoint();
+    overlay.remove();
+    return;
+  }
+  const w = overlay.width;
+  const h = overlay.height;
+  const total = ELEVATOR_CLOSE_MS + ELEVATOR_HOLD_MS + ELEVATOR_OPEN_MS;
+  let firedMidpoint = false;
+  const start = performance.now();
+
+  function drawDoors(closedRatio: number): void {
+    ctx!.clearRect(0, 0, w, h);
+    const doorW = (w / 2) * closedRatio;
+    ctx!.fillStyle = '#241a2e';
+    ctx!.fillRect(0, 0, doorW, h);
+    ctx!.fillRect(w - doorW, 0, doorW, h);
+    ctx!.strokeStyle = '#ffd166';
+    ctx!.lineWidth = 3;
+    ctx!.beginPath();
+    ctx!.moveTo(doorW, 0);
+    ctx!.lineTo(doorW, h);
+    ctx!.moveTo(w - doorW, 0);
+    ctx!.lineTo(w - doorW, h);
+    ctx!.stroke();
+  }
+
+  function tick(now: number): void {
+    const elapsed = now - start;
+    if (elapsed < ELEVATOR_CLOSE_MS) {
+      drawDoors(elapsed / ELEVATOR_CLOSE_MS);
+    } else if (elapsed < ELEVATOR_CLOSE_MS + ELEVATOR_HOLD_MS) {
+      if (!firedMidpoint) {
+        firedMidpoint = true;
+        onMidpoint();
+      }
+      drawDoors(1);
+    } else if (elapsed < total) {
+      const openElapsed = elapsed - ELEVATOR_CLOSE_MS - ELEVATOR_HOLD_MS;
+      drawDoors(1 - openElapsed / ELEVATOR_OPEN_MS);
+    } else {
+      overlay.remove();
+      return;
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}

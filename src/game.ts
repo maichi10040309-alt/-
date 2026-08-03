@@ -18,7 +18,7 @@ import { initOverlay, openModal, closeModal, closeButtonHtml, escapeHtml } from 
 import { renderMap, hitTestMap, getStandingSpot, PLAYER_HOME_SPOT, ELEVATOR_SPOT, CANVAS_W, CANVAS_H, type PlayerSprite } from '@/ui/mapRenderer';
 import { buildHud, renderTopBar } from '@/ui/hud';
 import { drawCharacterAvatar, drawSweetIcon } from '@/ui/pixelArt';
-import { initEffects, showToast, burstConfetti } from '@/ui/effects';
+import { initEffects, showToast, burstConfetti, playElevatorTransition } from '@/ui/effects';
 
 const PLAYER_SPEED = 260; // 論理キャンバス座標 px/秒
 
@@ -228,8 +228,9 @@ export class Game {
     `);
     panel.querySelectorAll<HTMLButtonElement>('[data-floor]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        this.changeFloor(Number(btn.dataset.floor));
+        const floor = Number(btn.dataset.floor);
         closeModal();
+        playElevatorTransition(this.canvas, () => this.changeFloor(floor));
       });
     });
     this.attachCloseHandlers();

@@ -93,7 +93,8 @@ export function drawCharacterAvatar(ctx: CanvasRenderingContext2D, x: number, y:
 // マップ上を歩く全身スプライト(頭+胴体+脚、5x14の半分グリッド)
 // ---------------------------------------------------------
 
-const BODY_BASE: PixelGrid = [
+// 胴体・頭部のみ(脚は歩行アニメーションのため別途描画する)
+const BODY_TORSO: PixelGrid = [
   [0, 0, 1, 1, 1],
   [0, 1, 1, 1, 1],
   [1, 1, 1, 1, 1],
@@ -105,14 +106,29 @@ const BODY_BASE: PixelGrid = [
   [0, 6, 6, 6, 6],
   [0, 6, 6, 6, 6],
   [0, 6, 6, 6, 6],
-  [0, 0, 7, 0, 7],
-  [0, 0, 8, 0, 8],
-  [0, 0, 0, 0, 0],
 ];
 
-function drawBodySprite(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, palette: Palette, bobOffset: number): void {
+/**
+ * 胴体+脚を描画する。legPhase!=0 のときは左右の脚が逆位相で前後に振れる
+ * 実際の「歩行」アニメーションになり、legPhase=0 のときは直立姿勢になる。
+ */
+function drawBodySprite(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, palette: Palette, bobOffset: number, legPhase = 0): void {
   const cell = size / 10;
-  drawMirrored(ctx, x, y - bobOffset, cell, BODY_BASE, palette);
+  const top = y - bobOffset;
+  drawMirrored(ctx, x, top, cell, BODY_TORSO, palette);
+
+  const stride = Math.sin(legPhase) * cell * 1.3;
+  const legY = top + 11 * cell;
+  const footY = top + 12 * cell;
+  const leftX = x + 2 * cell + stride;
+  const rightX = x + 7 * cell - stride;
+
+  ctx.fillStyle = palette[7];
+  ctx.fillRect(leftX, legY, cell, cell);
+  ctx.fillRect(rightX, legY, cell, cell);
+  ctx.fillStyle = palette[8];
+  ctx.fillRect(leftX, footY, cell, cell);
+  ctx.fillRect(rightX, footY, cell, cell);
 }
 
 export function drawShadow(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number): void {
@@ -145,7 +161,10 @@ export function drawCharacterOnMap(ctx: CanvasRenderingContext2D, x: number, y: 
   drawBodySprite(ctx, x, y, size, palette, bob);
 }
 
-/** プレイヤーの全身スプライト。歩行中は跳ねるように、待機中はゆっくり揺れる。 */
+// 調整可能パラメータ: プレイヤーの歩行速度に対する脚振り速度の倍率
+const WALK_CYCLE_SPEED = 9;
+
+/** プレイヤーの全身スプライト。歩行中は脚が交互に振れて進み、待機中はゆっくり揺れる。 */
 export function drawPlayerOnMap(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, animPhase: number, walking: boolean): void {
   const palette: Palette = {
     1: '#7a4a2a',
@@ -155,9 +174,10 @@ export function drawPlayerOnMap(ctx: CanvasRenderingContext2D, x: number, y: num
     7: '#e0776b',
     8: '#4a2c2a',
   };
-  const bob = walking ? Math.abs(Math.sin(animPhase * 6)) * 3 : Math.sin(animPhase * 1.2) * 1.2;
+  const bob = walking ? Math.abs(Math.sin(animPhase * WALK_CYCLE_SPEED)) * 2.5 : Math.sin(animPhase * 1.2) * 1.2;
+  const legPhase = walking ? animPhase * WALK_CYCLE_SPEED : 0;
   drawShadow(ctx, x + size / 2, y + size * 1.15, size * 0.75);
-  drawBodySprite(ctx, x, y, size, palette, bob);
+  drawBodySprite(ctx, x, y, size, palette, bob, legPhase);
 }
 
 // ---------------------------------------------------------
@@ -179,6 +199,9 @@ const SHOP_BASE: PixelGrid = [
   [0, 0, 0, 0, 0, 0],
 ];
 
+// スイーツ店の軒先に付くキャンディストライプ柄のオーニング(日よけ)
+const AWNING_ROW: number[] = [10, 11, 10, 11, 10, 11];
+
 export function drawShopBuilding(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -194,14 +217,29 @@ export function drawShopBuilding(
   const windowColor = isNight ? '#ffe98a' : '#bfe9f2';
   const doorColor = shopType === 'sweets' ? '#c9506f' : '#6f8f5a';
 
+  if (shopType === 'sweets') {
+    grid[8] = AWNING_ROW.slice();
+  }
+
   const palette: Palette = {
     6: roofColor,
     7: wallColor,
     8: windowColor,
     9: doorColor,
+    10: '#fff7fa',
+    11: shadeColor(baseColor, -5),
   };
 
   const cell = size / 12;
+
+  // 建物の足元に落ちる影(地面に立っている感を出す)
+  ctx.save();
+  ctx.fillStyle = 'rgba(40,20,20,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(x + size / 2, y + 11 * cell + cell * 0.4, size * 0.52, cell * 0.9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
   drawMirrored(ctx, x, y, cell, grid, palette);
 
   // 店種を示す看板マーク(スイーツ店=丸いアイコン、素材店=四角いアイコン)

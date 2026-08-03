@@ -102,6 +102,43 @@ const STARS: { x: number; y: number; r: number }[] = (() => {
   return stars;
 })();
 
+// 環境パーティクル(昼は花びら、夜はきらめき)。固定シードでちらつきを防ぐ。
+interface AmbientParticle {
+  x: number;
+  speed: number;
+  drift: number;
+  phase: number;
+  size: number;
+}
+
+const AMBIENT_PARTICLES: AmbientParticle[] = (() => {
+  let seed = 7;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed % 1000) / 1000;
+  };
+  const list: AmbientParticle[] = [];
+  for (let i = 0; i < 16; i++) {
+    list.push({ x: rand() * CANVAS_W, speed: 10 + rand() * 14, drift: 14 + rand() * 26, phase: rand() * Math.PI * 2, size: 2 + rand() * 2.5 });
+  }
+  return list;
+})();
+
+function drawAmbientParticles(ctx: CanvasRenderingContext2D, animClock: number, isNight: boolean): void {
+  ctx.save();
+  for (const p of AMBIENT_PARTICLES) {
+    const cycle = CANVAS_H + 40;
+    const fallY = ((animClock * p.speed + p.phase * 60) % cycle) - 20;
+    const x = p.x + Math.sin(animClock * 0.5 + p.phase) * p.drift * 0.4;
+    ctx.globalAlpha = isNight ? 0.55 + Math.sin(animClock * 2 + p.phase) * 0.25 : 0.4;
+    ctx.fillStyle = isNight ? '#ffe9a8' : '#ffb6c8';
+    ctx.beginPath();
+    ctx.arc(x, fallY, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawBackground(ctx: CanvasRenderingContext2D, timeOfDay: GameState['timeOfDay']): void {
   const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
   if (timeOfDay === 'morning') {
@@ -178,6 +215,7 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   drawBackground(ctx, state.timeOfDay);
   const isNight = state.timeOfDay === 'night';
+  drawAmbientParticles(ctx, animClock, isNight);
 
   ctx.textAlign = 'center';
   ctx.font = 'bold 16px sans-serif';
