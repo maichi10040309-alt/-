@@ -1,7 +1,7 @@
 import type { GameState } from '@/types';
 import { getRecipe, rankLabel } from '@/data/recipes';
 import { rollRivalDailySales } from '@/data/rivals';
-import { addLog } from './gameState';
+import { addLog, pickDailyRecommendation } from './gameState';
 import { computeFairPrice } from './crafting';
 
 // 調整可能パラメータ
@@ -10,6 +10,7 @@ export const BASE_CUSTOMERS_PER_SHIFT = 6; // 1回の接客あたりの基準来
 export const CUSTOMER_VARIANCE = 3;
 export const TARGET_SALES_BASE = 1800; // 月間目標売上(基準値)
 export const TARGET_SALES_GROWTH = 250; // 月が進むごとに増える目標額
+export const RECOMMENDATION_PURCHASE_BONUS = 0.2; // 「本日のおすすめ」に一致する商品の購入確率ボーナス
 
 export function priceFeelLabel(price: number, fairPrice: number): string {
   const ratio = price / fairPrice;
@@ -29,11 +30,12 @@ export interface SalesShiftResult {
  * ランクに見合った「適正価格」からの乖離で購入確率を算出する簡易式(調整可能)。
  * 適正価格ちょうどなら基準確率、それより安ければ加点、高ければ減点する。
  */
-export function purchaseProbability(rankIndex: number, price: number, fairPrice: number): number {
+export function purchaseProbability(rankIndex: number, price: number, fairPrice: number, isRecommended = false): number {
   const rankBonus = rankIndex * 0.03;
   const deviation = (price - fairPrice) / fairPrice; // 正なら割高、負なら割安
   const priceEffect = deviation >= 0 ? deviation * 0.6 : deviation * 0.35;
-  return Math.min(0.95, Math.max(0.05, 0.55 + rankBonus - priceEffect));
+  const recommendationBonus = isRecommended ? RECOMMENDATION_PURCHASE_BONUS : 0;
+  return Math.min(0.95, Math.max(0.05, 0.55 + rankBonus - priceEffect + recommendationBonus));
 }
 
 /** プレイヤーの店で接客を行い、棚の商品が売れるかシミュレーションする */
@@ -53,7 +55,8 @@ export function runSalesShift(state: GameState): SalesShiftResult {
     const item = state.shelf[itemIdx];
     const recipe = getRecipe(item.recipeId);
     const fairPrice = computeFairPrice(item.recipeId, item.rankIndex);
-    const prob = purchaseProbability(item.rankIndex, item.price, fairPrice);
+    const isRecommended = item.recipeId === state.todaysRecommendationRecipeId;
+    const prob = purchaseProbability(item.rankIndex, item.price, fairPrice, isRecommended);
     if (Math.random() < prob) {
       state.shelf.splice(itemIdx, 1);
       state.money += item.price;
@@ -75,6 +78,7 @@ export function runSalesShift(state: GameState): SalesShiftResult {
 /** 日が進んだ際に呼び出す。ライバル店の売上加算と月末集計を行う。 */
 export function onDayAdvanced(state: GameState): void {
   state.currentMonthRivalSales += rollRivalDailySales();
+  state.todaysRecommendationRecipeId = pickDailyRecommendation();
 
   const dayInMonth = ((state.day - 1) % DAYS_PER_MONTH) + 1;
   if (dayInMonth === 1 && state.day > 1) {

@@ -14,8 +14,6 @@ export interface ShopDef {
   type: ShopType;
   characterId: string;
   floor: number;
-  gridX: number;
-  gridY: number;
 }
 
 export interface CharacterDef {
@@ -152,4 +150,5 @@ export interface GameState {
   actionsThisSlot: number; // このタイムスロット内で行った「時間を消費する行動」の回数
   logs: LogEntry[];
   logSeq: number;
+  todaysRecommendationRecipeId: string; // 本日のおすすめ(日替わりで抽選)
 }

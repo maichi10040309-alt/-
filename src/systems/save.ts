@@ -1,5 +1,5 @@
 import type { GameState } from '@/types';
-import { SAVE_VERSION } from './gameState';
+import { SAVE_VERSION, pickDailyRecommendation } from './gameState';
 
 const SAVE_KEY = 'sweets-department-save-v1';
 
@@ -13,6 +13,7 @@ export function loadGame(): GameState | null {
   try {
     const parsed = JSON.parse(raw) as GameState;
     if (parsed.version !== SAVE_VERSION) return null;
+    if (!parsed.todaysRecommendationRecipeId) parsed.todaysRecommendationRecipeId = pickDailyRecommendation();
     return parsed;
   } catch {
     return null;

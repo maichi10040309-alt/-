@@ -77,7 +77,8 @@ function drawInteriorBackdrop(ctx: CanvasRenderingContext2D): void {
 export function renderShopInterior(
   ctx: CanvasRenderingContext2D,
   roomKey: string,
-  char: CharacterDef,
+  char: CharacterDef | null,
+  title: string,
   animClock: number,
   player: PlayerSprite
 ): InteriorLayout {
@@ -97,16 +98,30 @@ export function renderShopInterior(
   ctx.textAlign = 'center';
   ctx.font = 'bold 16px sans-serif';
   ctx.fillStyle = '#ffe6f4';
-  ctx.fillText(`${char.name}のお店`, CANVAS_W / 2, layout.imgY - 24);
+  ctx.fillText(title, CANVAS_W / 2, layout.imgY - 24);
   ctx.font = '12px sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
   ctx.fillText('入口をクリックすると外に出ます', CANVAS_W / 2, Math.min(CANVAS_H - 78, layout.imgY + layout.imgH + 20));
 
-  // キャラクター(固定位置に立っていて、idleでゆっくり揺れる)
-  const bob = Math.sin(animClock * 1.3) * 2;
-  drawShadow(ctx, layout.characterSpot.x, layout.characterSpot.y + 8, 30);
-  const charImg = getImage(CHARACTER_PORTRAITS[char.portrait]);
-  drawSpriteAtFeet(ctx, charImg, layout.characterSpot.x, layout.characterSpot.y + bob, 46);
+  if (char) {
+    // キャラクター(固定位置に立っていて、idleでゆっくり揺れる)
+    const bob = Math.sin(animClock * 1.3) * 2;
+    drawShadow(ctx, layout.characterSpot.x, layout.characterSpot.y + 8, 30);
+    const charImg = getImage(CHARACTER_PORTRAITS[char.portrait]);
+    drawSpriteAtFeet(ctx, charImg, layout.characterSpot.x, layout.characterSpot.y + bob, 46);
+  } else {
+    // 自分の店: キャラの代わりにレジカウンターの目印を表示
+    const bob = Math.sin(animClock * 1.3) * 2;
+    drawShadow(ctx, layout.characterSpot.x, layout.characterSpot.y + 10, 26);
+    ctx.save();
+    ctx.font = '34px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🧾', layout.characterSpot.x, layout.characterSpot.y + bob);
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = '#ffe6f4';
+    ctx.fillText('レジ(クリックでお店を管理)', layout.characterSpot.x, layout.characterSpot.y + bob + 20);
+    ctx.restore();
+  }
 
   // プレイヤー
   const playerImg = getImage(CHARACTER_PORTRAITS.strawberry);

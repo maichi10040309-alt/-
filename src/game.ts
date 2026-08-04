@@ -166,17 +166,20 @@ export class Game {
     }
     const spot = getStandingSpot(hit, this.currentFloor);
     this.walkTo(spot, () => {
-      if (hit.type === 'player_shop') this.openPlayerShop();
+      if (hit.type === 'player_shop') this.enterShopInterior('player_shop');
       else if (hit.type === 'elevator') this.openFloorSelect();
       else this.enterShopInterior(hit.id);
     });
   }
 
+  private interiorRoomKey(shopId: string): string {
+    return shopId === 'player_shop' ? 'strawberry' : getCharacter(getShop(shopId).characterId).portrait;
+  }
+
   private handleInteriorClick(x: number, y: number): void {
     const shopId = this.insideShopId;
     if (!shopId) return;
-    const char = getCharacter(getShop(shopId).characterId);
-    const layout = computeInteriorLayout(char.portrait);
+    const layout = computeInteriorLayout(this.interiorRoomKey(shopId));
     const hit = hitTestInterior(x, y, layout);
 
     if (hit?.type === 'exit') {
@@ -184,7 +187,11 @@ export class Game {
       return;
     }
     if (hit?.type === 'character') {
-      this.walkTo(layout.characterSpot, () => this.openCharacterDialogue(shopId));
+      if (shopId === 'player_shop') {
+        this.walkTo(layout.characterSpot, () => this.openPlayerShopPanel());
+      } else {
+        this.walkTo(layout.characterSpot, () => this.openCharacterDialogue(shopId));
+      }
       return;
     }
     this.walkTo(clampToInterior(x, y, layout));
@@ -195,8 +202,7 @@ export class Game {
   // ---------------------------------------------------------
 
   private enterShopInterior(shopId: string): void {
-    const char = getCharacter(getShop(shopId).characterId);
-    const layout = computeInteriorLayout(char.portrait);
+    const layout = computeInteriorLayout(this.interiorRoomKey(shopId));
     this.insideShopId = shopId;
     this.player.x = layout.entrance.x;
     this.player.y = layout.entrance.y;
@@ -206,9 +212,18 @@ export class Game {
     this.hideDialogue();
   }
 
+  /** 「自分の店」ボタンなどからのショートカット入場(現在地に関わらず1Fの自店内装へ直接入る) */
+  private goToPlayerShop(): void {
+    this.currentFloor = PLAYER_HOME_FLOOR;
+    this.enterShopInterior('player_shop');
+  }
+
   private exitShopInterior(): void {
     if (!this.insideShopId) return;
-    const spot = getStandingSpot({ type: 'shop', id: this.insideShopId });
+    const spot =
+      this.insideShopId === 'player_shop'
+        ? getStandingSpot({ type: 'player_shop' }, this.currentFloor)
+        : getStandingSpot({ type: 'shop', id: this.insideShopId });
     this.insideShopId = null;
     this.player.x = spot.x;
     this.player.y = spot.y;
@@ -223,9 +238,11 @@ export class Game {
   // ---------------------------------------------------------
 
   private render(): void {
-    if (this.insideShopId) {
+    if (this.insideShopId === 'player_shop') {
+      renderShopInterior(this.ctx, 'strawberry', null, PLAYER_SHOP.name, this.animClock, this.player);
+    } else if (this.insideShopId) {
       const char = getCharacter(getShop(this.insideShopId).characterId);
-      renderShopInterior(this.ctx, char.portrait, char, this.animClock, this.player);
+      renderShopInterior(this.ctx, char.portrait, char, `${char.name}のお店`, this.animClock, this.player);
     } else {
       renderMap(this.ctx, this.state, this.currentFloor, this.animClock, this.player);
     }
@@ -251,10 +268,8 @@ export class Game {
     this.overlay.appendChild(this.bottomBar);
     this.overlay.appendChild(this.dialogueBox);
     buildHud(this.topBar, this.bottomBar, {
-      onResearch: () => this.doResearch(),
-      onCraft: () => this.openCraftPanel(),
       onInventory: () => this.openInventoryPanel(),
-      onMyShop: () => this.openPlayerShop(),
+      onMyShop: () => this.goToPlayerShop(),
       onContest: () => this.openContestPanel(),
       onSave: () => this.doSave(),
     });
@@ -814,14 +829,18 @@ export class Game {
   // 自分の店(棚 / 接客)
   // ---------------------------------------------------------
 
-  private openPlayerShop(): void {
+  private openPlayerShopPanel(): void {
     const panel = openModal(`
       <h2>🏪 ${escapeHtml(PLAYER_SHOP.name)}</h2>
       <div class="row">
         ${portraitHtml(PLAYER_SHOP.portrait, 'ストロベリー')}
         <p style="flex:1">今月の売上: ${this.state.currentMonthPlayerSales}ベリー(ライバル: ${this.state.currentMonthRivalSales}ベリー)</p>
       </div>
-      <div class="row"><button id="btn-shift">接客する</button></div>
+      <div class="row">
+        <button id="btn-shift">接客する</button>
+        <button class="secondary" id="btn-research">🔬 研究する</button>
+        <button class="secondary" id="btn-craft">🍰 調合する</button>
+      </div>
       <div id="shift-result"></div>
       <h3>🧁 陳列棚(${this.state.shelf.length} / ${SHELF_CAPACITY}点)</h3>
       <div class="list">
@@ -858,27 +877,29 @@ export class Game {
       panel.querySelector('#shift-result')!.innerHTML = `<p>${result.customers}人来店 / ${result.itemsSold}個販売 / ${result.revenue}ベリーの売上</p>`;
       if (result.itemsSold > 0) showToast(`💰 +${result.revenue}ベリーの売上!`, 'money');
       if (result.itemsSold >= 3) burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H * 0.3);
-      this.openPlayerShop();
+      this.openPlayerShopPanel();
     });
+    panel.querySelector('#btn-research')!.addEventListener('click', () => this.doResearch());
+    panel.querySelector('#btn-craft')!.addEventListener('click', () => this.openCraftPanel());
 
     panel.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.remove!;
         this.state.shelf = this.state.shelf.filter((i) => i.id !== id);
-        this.openPlayerShop();
+        this.openPlayerShopPanel();
       });
     });
 
     panel.querySelectorAll<HTMLButtonElement>('[data-price-up]').forEach((btn) => {
       btn.addEventListener('click', () => {
         adjustShelfPrice(this.state, btn.dataset.priceUp!, PRICE_ADJUST_STEP);
-        this.openPlayerShop();
+        this.openPlayerShopPanel();
       });
     });
     panel.querySelectorAll<HTMLButtonElement>('[data-price-down]').forEach((btn) => {
       btn.addEventListener('click', () => {
         adjustShelfPrice(this.state, btn.dataset.priceDown!, -PRICE_ADJUST_STEP);
-        this.openPlayerShop();
+        this.openPlayerShopPanel();
       });
     });
 

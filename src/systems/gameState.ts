@@ -5,6 +5,12 @@ import { RECIPES } from '@/data/recipes';
 export const SAVE_VERSION = 1;
 export const STARTING_MONEY = 3000;
 
+/** その日の「本日のおすすめ」レシピをランダムに1つ選ぶ */
+export function pickDailyRecommendation(): string {
+  const idx = Math.floor(Math.random() * RECIPES.length);
+  return RECIPES[idx].id;
+}
+
 export function createInitialState(): GameState {
   const characterAffinity: GameState['characterAffinity'] = {};
   for (const c of CHARACTERS) {
@@ -42,6 +48,7 @@ export function createInitialState(): GameState {
     actionsThisSlot: 0,
     logs: [],
     logSeq: 0,
+    todaysRecommendationRecipeId: pickDailyRecommendation(),
   };
 }
 

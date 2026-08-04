@@ -2,8 +2,6 @@ import type { GameState } from '@/types';
 import { timeLabel } from '@/systems/time';
 
 export interface HudHandlers {
-  onResearch: () => void;
-  onCraft: () => void;
   onInventory: () => void;
   onMyShop: () => void;
   onContest: () => void;
@@ -13,8 +11,6 @@ export interface HudHandlers {
 export function buildHud(topBar: HTMLElement, bottomBar: HTMLElement, handlers: HudHandlers): void {
   bottomBar.innerHTML = '';
   const buttons: [string, () => void][] = [
-    ['🔬 研究する', handlers.onResearch],
-    ['🍰 調合する', handlers.onCraft],
     ['🎒 在庫', handlers.onInventory],
     ['🏪 自分の店', handlers.onMyShop],
     ['🏆 コンテスト', handlers.onContest],

@@ -1,19 +1,21 @@
 import type { GameState } from '@/types';
 import { SHOPS, PLAYER_SHOP, FLOORS, getShopsOnFloor } from '@/data/shops';
 import { getCharacter } from '@/data/characters';
+import { getRecipe } from '@/data/recipes';
 import { CHARACTER_PORTRAITS, SHOP_BUILDING_IMAGES, DEPARTMENT_HALL_IMAGE } from '@/data/imageAssets';
 import { getImage, drawSpriteAtFeet, drawImageFitBottom } from './imageCache';
-import { drawShadow } from './pixelArt';
+import { drawShadow, drawSweetIcon } from './pixelArt';
 
 export const CANVAS_W = 960;
 export const CANVAS_H = 540;
 
-const GRID_LEFT = 60;
-const GRID_TOP = 110;
-const CELL_W = 280;
-const CELL_H = 190;
+// 2F〜4Fは「街並み」風に店舗ファサードを横一列に並べる(添付イメージ参照)。
+const FACADE_TOP = 94;
+const FACADE_HEIGHT = 230;
+const FACADE_MARGIN_X = 30;
+const FACADE_GAP = 14;
 
-export const ELEVATOR_RECT = { x: CANVAS_W - 150, y: 120, w: 100, h: 200 };
+export const ELEVATOR_RECT = { x: CANVAS_W / 2 - 70, y: FACADE_TOP + FACADE_HEIGHT + 36, w: 140, h: 76 };
 
 // 1F(エントランス)は「デパート内観(中央ホール)」の実イラストを背景に使い、
 // 画像上の自然座標系(870x315)で入口/エスカレーターの当たり判定を定義する。
@@ -73,13 +75,12 @@ interface ShopRect {
   h: number;
 }
 
-function shopRect(gridX: number, gridY: number): ShopRect {
-  return {
-    x: GRID_LEFT + gridX * CELL_W,
-    y: GRID_TOP + gridY * CELL_H,
-    w: CELL_W - 30,
-    h: CELL_H - 30,
-  };
+/** フロア内でのインデックスと店舗数から、横一列の店舗ファサードの矩形を計算する */
+function facadeRect(index: number, count: number): ShopRect {
+  const totalGap = FACADE_GAP * (count - 1);
+  const w = (CANVAS_W - FACADE_MARGIN_X * 2 - totalGap) / count;
+  const x = FACADE_MARGIN_X + index * (w + FACADE_GAP);
+  return { x, y: FACADE_TOP, w, h: FACADE_HEIGHT };
 }
 
 // キャラクターごとに一意だが決定的なゆらぎ位相を作る(全員が同期して揺れないように)
@@ -107,10 +108,11 @@ export function hitTestMap(x: number, y: number, floor: number): MapHit {
   if (x >= ELEVATOR_RECT.x && x <= ELEVATOR_RECT.x + ELEVATOR_RECT.w && y >= ELEVATOR_RECT.y && y <= ELEVATOR_RECT.y + ELEVATOR_RECT.h) {
     return { type: 'elevator' };
   }
-  for (const shop of getShopsOnFloor(floor)) {
-    const r = shopRect(shop.gridX, shop.gridY);
+  const shopsOnFloor = getShopsOnFloor(floor);
+  for (let i = 0; i < shopsOnFloor.length; i++) {
+    const r = facadeRect(i, shopsOnFloor.length);
     if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-      return { type: 'shop', id: shop.id };
+      return { type: 'shop', id: shopsOnFloor[i].id };
     }
   }
   return null;
@@ -131,7 +133,9 @@ export function getStandingSpot(hit: MapHit, floor = 1): { x: number; y: number 
     return getHallShopSpot();
   }
   const shop = SHOPS.find((s) => s.id === hit.id)!;
-  const r = shopRect(shop.gridX, shop.gridY);
+  const shopsOnFloor = getShopsOnFloor(shop.floor);
+  const idx = shopsOnFloor.findIndex((s) => s.id === shop.id);
+  const r = facadeRect(idx, shopsOnFloor.length);
   return { x: r.x + r.w / 2, y: Math.min(r.y + r.h + 14, CANVAS_H - 60) };
 }
 
@@ -276,7 +280,7 @@ function drawElevator(ctx: CanvasRenderingContext2D, isNight: boolean): void {
 
   ctx.fillStyle = isNight ? '#ffe6f4' : '#4a2c2a';
   ctx.font = 'bold 12px sans-serif';
-  ctx.fillText('エレベーター', x + w / 2, y + h + 16 - 20);
+  ctx.fillText('エレベーター', x + w / 2, y + h + 16);
 }
 
 function renderHallFloor(ctx: CanvasRenderingContext2D, state: GameState, isNight: boolean): void {
@@ -351,6 +355,79 @@ function renderHallFloor(ctx: CanvasRenderingContext2D, state: GameState, isNigh
     const p = hallToCanvas(layout, door.x, door.y);
     ctx.fillText('準備中', p.x, p.y);
   }
+
+  drawRecommendationBoard(ctx, layout, state, isNight);
+}
+
+// カテゴリごとの「本日のおすすめ」宣伝文句(調整可能)
+const RECOMMENDATION_BLURB: Record<string, string> = {
+  cake: 'ふわふわ食感が今、大人気!',
+  cookie: 'サクサク香ばしい人気の一枚!',
+  chocolate: '濃厚な味わいでリピーター続出!',
+  candy: '可愛い見た目で手土産にも大人気!',
+  pastry: '焼きたての香りが自慢の逸品!',
+};
+
+function drawRecommendationBoard(ctx: CanvasRenderingContext2D, layout: HallLayout, state: GameState, isNight: boolean): void {
+  const recipe = getRecipe(state.todaysRecommendationRecipeId);
+  const boardW = 208;
+  const boardH = 118;
+  const boardX = layout.imgX + layout.imgW - boardW - 14;
+  const boardY = layout.imgY + 14;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = isNight ? 'rgba(45,30,55,0.92)' : 'rgba(255,250,243,0.95)';
+  roundRect(ctx, boardX, boardY, boardW, boardH, 12);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = '#e0b04a';
+  ctx.lineWidth = 3;
+  roundRect(ctx, boardX, boardY, boardW, boardH, 12);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 11px sans-serif';
+  const headerText = '✨本日のおすすめ✨';
+  const headerW = ctx.measureText(headerText).width + 18;
+  ctx.fillStyle = '#e0679a';
+  roundRect(ctx, boardX + boardW / 2 - headerW / 2, boardY - 11, headerW, 20, 10);
+  ctx.fill();
+  ctx.fillStyle = '#fffaf3';
+  ctx.fillText(headerText, boardX + boardW / 2, boardY + 3);
+  ctx.restore();
+
+  drawSweetIcon(ctx, boardX + 12, boardY + 22, 52, recipe.category, 3);
+
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.fillStyle = isNight ? '#ffe6f4' : '#b3446c';
+  ctx.font = 'bold 13px sans-serif';
+  wrapText(ctx, recipe.name, boardX + 72, boardY + 38, boardW - 82, 16);
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = isNight ? '#e6c9e0' : '#6b4a3a';
+  const blurb = RECOMMENDATION_BLURB[recipe.category] ?? '今だけの人気メニュー!';
+  wrapText(ctx, blurb, boardX + 12, boardY + 92, boardW - 24, 13);
+  ctx.restore();
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): void {
+  let line = '';
+  let cy = y;
+  for (const ch of text) {
+    const test = line + ch;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      ctx.fillText(line, x, cy);
+      line = ch;
+      cy += lineHeight;
+    } else {
+      line = test;
+    }
+  }
+  if (line) ctx.fillText(line, x, cy);
 }
 
 export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor: number, animClock: number, player: PlayerSprite): void {
@@ -371,34 +448,37 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor
   }
 
   if (floor !== 1) {
-    for (const shop of getShopsOnFloor(floor)) {
-      const r = shopRect(shop.gridX, shop.gridY);
+    const shopsOnFloor = getShopsOnFloor(floor);
+    for (let i = 0; i < shopsOnFloor.length; i++) {
+      const shop = shopsOnFloor[i];
+      const r = facadeRect(i, shopsOnFloor.length);
       const char = getCharacter(shop.characterId);
       const affinity = state.characterAffinity[shop.characterId];
+      const accent = shop.type === 'bookstore' ? '#8a7ab5' : '#d9678f';
 
-      ctx.fillStyle = isNight ? 'rgba(50,35,65,0.55)' : 'rgba(255,255,255,0.7)';
-      roundRect(ctx, r.x, r.y, r.w, r.h, 14);
+      // 店舗ファサード(壁面ベイ)。番号・店名は建物イラスト自体に描き込み済みのため重複させない。
+      ctx.fillStyle = isNight ? 'rgba(50,35,65,0.55)' : 'rgba(255,255,255,0.72)';
+      roundRect(ctx, r.x, r.y, r.w, r.h, 10);
       ctx.fill();
-      ctx.strokeStyle = shop.type === 'bookstore' ? '#8a7ab5' : '#d9678f';
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      ctx.textAlign = 'center';
+      // 建物ファサード画像
       const buildingImg = getImage(SHOP_BUILDING_IMAGES[char.portrait]);
-      drawImageFitBottom(ctx, buildingImg, r.x + 10, r.y + 4, r.w - 20, r.h * 0.56);
+      drawImageFitBottom(ctx, buildingImg, r.x + 8, r.y + 8, r.w - 16, r.h * 0.62);
 
+      // キャラクター(店主)の立ち姿
       const bob = Math.sin(animClock * 1.3 + phaseFor(char.id) * 10) * 2;
-      drawShadow(ctx, r.x + r.w / 2, r.y + r.h - 28, r.w * 0.3);
+      const standeeH = Math.min(58, r.h * 0.32);
+      drawShadow(ctx, r.x + r.w / 2, r.y + r.h - 22, r.w * 0.28);
       const charImg = getImage(CHARACTER_PORTRAITS[char.portrait]);
-      drawSpriteAtFeet(ctx, charImg, r.x + r.w / 2, r.y + r.h - 30 + bob, r.h * 0.46);
+      drawSpriteAtFeet(ctx, charImg, r.x + r.w / 2, r.y + r.h - 24 + bob, standeeH);
 
-      ctx.fillStyle = isNight ? '#ffe6f4' : '#3a2a20';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.fillText(shop.name, r.x + r.w / 2, r.y + r.h - 16);
-      ctx.font = '11px sans-serif';
+      ctx.font = '10px sans-serif';
       ctx.fillStyle = isNight ? '#e6c9e0' : '#6b4a3a';
       const hearts = '♥'.repeat(affinity.level) + '♡'.repeat(5 - affinity.level);
-      ctx.fillText(`${char.name} ${hearts}`, r.x + r.w / 2, r.y + r.h - 3);
+      ctx.fillText(hearts, r.x + r.w / 2, r.y + r.h - 4);
 
       if (affinity.pendingEventLevel) {
         ctx.save();
@@ -406,12 +486,12 @@ export function renderMap(ctx: CanvasRenderingContext2D, state: GameState, floor
         ctx.shadowBlur = 6;
         ctx.fillStyle = '#ff4d6d';
         ctx.beginPath();
-        ctx.arc(r.x + r.w - 14, r.y + 14, 10, 0, Math.PI * 2);
+        ctx.arc(r.x + r.w - 12, r.y + 12, 9, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 13px sans-serif';
-        ctx.fillText('!', r.x + r.w - 14, r.y + 19);
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText('!', r.x + r.w - 12, r.y + 16);
       }
     }
   }
