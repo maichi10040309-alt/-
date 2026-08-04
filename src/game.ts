@@ -1,10 +1,11 @@
-import type { GameState, SalesShiftResult, CustomerTypeId } from '@/types';
+import type { GameState, SalesShiftResult, CustomerTypeId, ShopUpgradeId } from '@/types';
 import { createInitialState } from '@/systems/gameState';
 import { saveGame, loadGame, hasSaveData } from '@/systems/save';
 import { timeLabel } from '@/systems/time';
 import { performTalk, performResearch } from '@/systems/actions';
-import { craftSweet, canCraft, buyMaterial, SHELF_CAPACITY, priceRangeFor, adjustShelfPrice, PRICE_ADJUST_STEP } from '@/systems/crafting';
+import { craftSweet, canCraft, buyMaterial, getEffectiveCraftSuccessRate, priceRangeFor, adjustShelfPrice, PRICE_ADJUST_STEP } from '@/systems/crafting';
 import { runSalesShift, priceFeelLabel } from '@/systems/sales';
+import { purchaseShopUpgrade } from '@/systems/shopUpgradeSystem';
 import { enterContest, previewWinProbability } from '@/systems/contestSystem';
 import { getPendingEvent, resolveConsultationEvent, resolveMinigameEvent } from '@/systems/eventSystem';
 
@@ -13,6 +14,17 @@ import { getShop, getShopByCharacter, PLAYER_SHOP, FLOORS, PLAYER_HOME_FLOOR, ge
 import { MATERIALS, getMaterial } from '@/data/materials';
 import { RECIPES, getRecipe, rankLabel } from '@/data/recipes';
 import { getCustomerType } from '@/data/customers';
+import {
+  SHOP_UPGRADE_IDS,
+  getShopUpgrade,
+  getCurrentUpgradeLevel,
+  getCurrentUpgradeLevelDef,
+  getNextUpgradeLevelDef,
+  getShelfCapacity,
+  getOvenSuccessBonus,
+  getRegisterCustomerCapacity,
+  isShopUpgradeId,
+} from '@/data/shopUpgrades';
 import { CONTEST_STAGES, getContestStage } from '@/data/contest';
 import { CHARACTER_PORTRAITS } from '@/data/imageAssets';
 
@@ -696,10 +708,17 @@ export class Game {
 
   private openCraftPanel(): void {
     const known = RECIPES.filter((r) => this.state.knownRecipeIds.includes(r.id));
-    const shelfFull = this.state.shelf.length >= SHELF_CAPACITY;
+    const shelfCapacity = getShelfCapacity(this.state);
+    const shelfFull = this.state.shelf.length >= shelfCapacity;
+    const ovenLevel = getCurrentUpgradeLevel(this.state, 'oven');
+    const ovenDef = getCurrentUpgradeLevelDef(this.state, 'oven');
+    const ovenBonus = getOvenSuccessBonus(this.state);
+    const ovenBonusText = ovenBonus > 0 ? `(設備補正 +${Math.round(ovenBonus * 100)}%)` : '';
+
     const panel = openModal(`
       <h2>🍳 キッチン - スイーツ調合</h2>
-      <p class="sub">陳列棚: ${this.state.shelf.length} / ${SHELF_CAPACITY}点 ${shelfFull ? '(満杯!自分の店で商品を整理しよう)' : ''}</p>
+      <p class="sub">陳列棚: ${this.state.shelf.length} / ${shelfCapacity}点 ${shelfFull ? '(満杯!自分の店で商品を整理しよう)' : ''}</p>
+      <p class="sub">🔥 オーブン: Lv.${ovenLevel} ${escapeHtml(ovenDef.name)}</p>
       <div class="list">
         ${known
           .map((r) => {
@@ -710,12 +729,13 @@ export class Game {
             const ingredientsText = r.ingredients
               .map((ing) => `${getMaterial(ing.materialId).name}×${ing.qty}`)
               .join(' / ');
+            const effectiveRate = Math.round(getEffectiveCraftSuccessRate(this.state, r.id) * 100);
             const label = shelfFull ? '棚が満杯' : ok ? '作る' : '素材不足';
             return `
             <div class="card" style="align-items:flex-start">
               <canvas class="sweet-canvas" width="60" height="60" data-sweet="${r.id}" data-rank="${rankIndex}"></canvas>
               <div class="info">
-                <div class="title">${escapeHtml(r.name)} <span class="sub">(成功率${Math.round(r.baseSuccessRate * 100)}%)</span></div>
+                <div class="title">${escapeHtml(r.name)} <span class="sub">(成功率${effectiveRate}%${ovenBonusText})</span></div>
                 <div class="sub">${escapeHtml(ingredientsText)}</div>
                 <div class="sub">${escapeHtml(rankText)}</div>
               </div>
@@ -875,7 +895,20 @@ export class Game {
     `;
   }
 
+  /** プレイヤー店舗画面用の、店舗設備レベルのコンパクトな一覧チップ */
+  private shopUpgradeSummaryChipsHtml(): string {
+    return SHOP_UPGRADE_IDS.map((id) => {
+      const def = getShopUpgrade(id);
+      const level = getCurrentUpgradeLevel(this.state, id);
+      return `<span class="customer-chip">${def.icon} ${escapeHtml(def.name)} Lv.${level}</span>`;
+    }).join('');
+  }
+
   private openPlayerShopPanel(lastResult?: SalesShiftResult): void {
+    const shelfCapacity = getShelfCapacity(this.state);
+    const registerLevel = getCurrentUpgradeLevel(this.state, 'register');
+    const baseCustomers = getRegisterCustomerCapacity(this.state);
+
     const panel = openModal(`
       <h2>🏪 ${escapeHtml(PLAYER_SHOP.name)}</h2>
       <div class="row">
@@ -887,8 +920,12 @@ export class Game {
         <button class="secondary" id="btn-research">🔬 研究する</button>
         <button class="secondary" id="btn-craft">🍰 調合する</button>
       </div>
+      <p class="sub">💳 レジ Lv.${registerLevel}・1回の接客で約${baseCustomers}人に対応</p>
       ${lastResult ? this.shiftResultHtml(lastResult) : ''}
-      <h3>🧁 陳列棚(${this.state.shelf.length} / ${SHELF_CAPACITY}点)</h3>
+      <h3>🏪 店舗設備</h3>
+      <div class="row">${this.shopUpgradeSummaryChipsHtml()}</div>
+      <div class="row"><button class="secondary" id="btn-upgrades">🏪 店舗設備を見る</button></div>
+      <h3>🧁 陳列棚(${this.state.shelf.length} / ${shelfCapacity}点)</h3>
       <div class="list">
         ${
           this.state.shelf
@@ -926,6 +963,7 @@ export class Game {
     });
     panel.querySelector('#btn-research')!.addEventListener('click', () => this.doResearch());
     panel.querySelector('#btn-craft')!.addEventListener('click', () => this.openCraftPanel());
+    panel.querySelector('#btn-upgrades')!.addEventListener('click', () => this.openShopUpgradesPanel());
 
     panel.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -945,6 +983,71 @@ export class Game {
       btn.addEventListener('click', () => {
         adjustShelfPrice(this.state, btn.dataset.priceDown!, -PRICE_ADJUST_STEP);
         this.openPlayerShopPanel();
+      });
+    });
+
+    this.attachCloseHandlers();
+  }
+
+  // ---------------------------------------------------------
+  // 店舗設備アップグレード
+  // ---------------------------------------------------------
+
+  private shopUpgradeCardHtml(upgradeId: ShopUpgradeId): string {
+    const def = getShopUpgrade(upgradeId);
+    const level = getCurrentUpgradeLevel(this.state, upgradeId);
+    const currentDef = getCurrentUpgradeLevelDef(this.state, upgradeId);
+    const nextDef = getNextUpgradeLevelDef(this.state, upgradeId);
+    const maxed = nextDef === null;
+    const affordable = nextDef !== null && this.state.money >= nextDef.cost;
+
+    return `
+      <div class="card upgrade-card">
+        <div class="info">
+          <div class="title">${def.icon} ${escapeHtml(def.name)}　Lv.${level}</div>
+          <div class="sub">${escapeHtml(currentDef.name)}</div>
+          <div class="sub">現在: ${escapeHtml(currentDef.description)}</div>
+          ${
+            maxed
+              ? `<div class="sub">最大レベルです</div>`
+              : `<div class="sub">次: ${escapeHtml(nextDef.name)}</div>
+                 <div class="sub">${escapeHtml(nextDef.description)}</div>
+                 <div class="sub">費用: ${nextDef.cost.toLocaleString()}ベリー</div>`
+          }
+        </div>
+        ${
+          maxed
+            ? ''
+            : `<button data-upgrade="${upgradeId}" ${affordable ? '' : 'disabled'}>${affordable ? 'アップグレード' : 'ベリーが足りません'}</button>`
+        }
+      </div>
+    `;
+  }
+
+  private openShopUpgradesPanel(): void {
+    const panel = openModal(`
+      <h2>🏪 店舗設備</h2>
+      <p class="sub">所持金: ${this.state.money}ベリー</p>
+      <div class="list">
+        ${SHOP_UPGRADE_IDS.map((id) => this.shopUpgradeCardHtml(id)).join('')}
+      </div>
+      ${closeButtonHtml()}
+    `);
+
+    panel.querySelectorAll<HTMLButtonElement>('[data-upgrade]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const upgradeId = btn.dataset.upgrade;
+        if (!upgradeId || !isShopUpgradeId(upgradeId)) return;
+        const result = purchaseShopUpgrade(this.state, upgradeId);
+        if (!result.ok) {
+          if (result.reason === 'not_enough_money') showToast('😢 ベリーが足りません', 'warn');
+          return;
+        }
+        const def = getShopUpgrade(upgradeId);
+        const newLevelDef = getCurrentUpgradeLevelDef(this.state, upgradeId);
+        showToast(`✨ ${def.name}を「${newLevelDef.name}」へアップグレードした!`, 'success');
+        saveGame(this.state);
+        this.openShopUpgradesPanel();
       });
     });
 

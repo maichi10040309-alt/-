@@ -1,9 +1,17 @@
 import type { GameState, ShelfItem } from '@/types';
 import { getRecipe, MASTERY_THRESHOLDS, RANK_PRICE_MULTIPLIER, rankLabel } from '@/data/recipes';
+import { getShelfCapacity, getOvenSuccessBonus } from '@/data/shopUpgrades';
 import { addLog, addInventory, getInventoryQty, removeInventory } from './gameState';
 
-// 調整可能パラメータ: 陳列棚に置ける商品数の上限。売り切る/下げる判断を迫るための制約。
+// 調整可能パラメータ: 陳列棚に置ける商品数の上限(レベル1=未強化状態の初期容量)。
+// 実際の上限は店舗設備(陳列棚)のレベルによって変わるため、判定には getShelfCapacity() を使うこと。
 export const SHELF_CAPACITY = 8;
+
+/** レシピ基本成功率にオーブン設備の補正を加えた、実際の調合成功率(最大95%)を返す */
+export function getEffectiveCraftSuccessRate(state: GameState, recipeId: string): number {
+  const recipe = getRecipe(recipeId);
+  return Math.min(0.95, recipe.baseSuccessRate + getOvenSuccessBonus(state));
+}
 
 export interface CraftResult {
   ok: boolean;
@@ -31,7 +39,7 @@ export function craftSweet(state: GameState, recipeId: string): CraftResult {
     return { ok: false, reason: 'not_enough_materials' };
   }
 
-  if (state.shelf.length >= SHELF_CAPACITY) {
+  if (state.shelf.length >= getShelfCapacity(state)) {
     return { ok: false, reason: 'shelf_full' };
   }
 
@@ -40,7 +48,7 @@ export function craftSweet(state: GameState, recipeId: string): CraftResult {
     removeInventory(state, ing.materialId, ing.qty);
   }
 
-  const success = Math.random() < recipe.baseSuccessRate;
+  const success = Math.random() < getEffectiveCraftSuccessRate(state, recipeId);
   if (!success) {
     addLog(state, `${recipe.name}作りに失敗してしまった……素材が無駄になった。`);
     return { ok: true, success: false };

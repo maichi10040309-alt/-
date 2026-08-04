@@ -1,4 +1,5 @@
-import type { CustomerTypeDef, CustomerTypeId } from '@/types';
+import type { CustomerTypeDef, CustomerTypeId, GameState } from '@/types';
+import { getInteriorCustomerWeightBonuses } from './shopUpgrades';
 
 // お客さんタイプ定義。予算・好みカテゴリー・重視ランクによって「売れやすい商品」が
 // 客層ごとに変わるようにするための一時データ(接客のたびに抽選するだけで、
@@ -81,15 +82,42 @@ export function getCustomerType(id: CustomerTypeId): CustomerTypeDef {
   return found;
 }
 
-/** 出現ウェイトに応じてお客さんタイプを1人抽選する(ウェイト合計が100でなくても正しく動く汎用処理) */
-export function pickCustomerType(): CustomerTypeDef {
-  const totalWeight = CUSTOMER_TYPES.reduce((sum, c) => sum + c.weight, 0);
+/**
+ * 出現ウェイトに応じてお客さんタイプを1人抽選する(ウェイト合計が100でなくても正しく動く汎用処理)。
+ * weights を渡すとタイプごとの最終ウェイトとして使う(省略時は CUSTOMER_TYPES の基本ウェイトのみ)。
+ */
+export function pickCustomerType(weights?: Record<CustomerTypeId, number>): CustomerTypeDef {
+  const effectiveWeights = weights ?? getBaseCustomerWeights();
+  const totalWeight = CUSTOMER_TYPES.reduce((sum, c) => sum + (effectiveWeights[c.id] ?? 0), 0);
   let roll = Math.random() * totalWeight;
   for (const customer of CUSTOMER_TYPES) {
-    roll -= customer.weight;
+    roll -= effectiveWeights[customer.id] ?? 0;
     if (roll < 0) return customer;
   }
   return CUSTOMER_TYPES[CUSTOMER_TYPES.length - 1];
+}
+
+function getBaseCustomerWeights(): Record<CustomerTypeId, number> {
+  return Object.fromEntries(CUSTOMER_TYPES.map((c) => [c.id, c.weight])) as Record<CustomerTypeId, number>;
+}
+
+/**
+ * 最終的な出現ウェイト(基本ウェイト＋店舗内装補正)を組み立てる。
+ * 将来「客層トレンド補正」「季節補正」などを追加する場合も、この関数へ同じ形で
+ * 加算していけば pickCustomerTypeForState 側の変更は不要になる。
+ */
+export function getEffectiveCustomerWeights(state: GameState): Record<CustomerTypeId, number> {
+  const interiorBonuses = getInteriorCustomerWeightBonuses(state);
+  const weights = getBaseCustomerWeights();
+  for (const customer of CUSTOMER_TYPES) {
+    weights[customer.id] += interiorBonuses[customer.id] ?? 0;
+  }
+  return weights;
+}
+
+/** 店舗設備(内装)の補正を反映した最終ウェイトで、お客さんタイプを1人抽選する */
+export function pickCustomerTypeForState(state: GameState): CustomerTypeDef {
+  return pickCustomerType(getEffectiveCustomerWeights(state));
 }
 
 // 予算が極端に小さくなりすぎないための下限(調整可能)

@@ -169,6 +169,43 @@ export interface ContestRecord {
   cleared: boolean;
 }
 
+// ------------------------------------------------------------
+// 店舗設備アップグレード
+// ------------------------------------------------------------
+
+export type ShopUpgradeId = 'display' | 'oven' | 'register' | 'interior';
+export type ShopUpgradeLevel = 1 | 2 | 3 | 4;
+
+export interface ShopUpgradeState {
+  display: ShopUpgradeLevel;
+  oven: ShopUpgradeLevel;
+  register: ShopUpgradeLevel;
+  interior: ShopUpgradeLevel;
+}
+
+// 設備ごとに異なる効果値を型安全に保持するための判別共用体(idと必ず対応する)
+export type ShopUpgradeEffect =
+  | { kind: 'display'; shelfCapacity: number }
+  | { kind: 'oven'; successRateBonus: number }
+  | { kind: 'register'; baseCustomers: number }
+  | { kind: 'interior'; customerWeightBonuses: Partial<Record<CustomerTypeId, number>> };
+
+export interface ShopUpgradeLevelDef {
+  level: ShopUpgradeLevel;
+  name: string;
+  description: string;
+  cost: number; // レベル1は0(強化費用なし)
+  effect: ShopUpgradeEffect;
+}
+
+export interface ShopUpgradeDef {
+  id: ShopUpgradeId;
+  name: string;
+  icon: string;
+  description: string;
+  levels: ShopUpgradeLevelDef[]; // インデックス0がレベル1
+}
+
 export interface LogEntry {
   id: number;
   day: number;
@@ -196,4 +233,5 @@ export interface GameState {
   logs: LogEntry[];
   logSeq: number;
   todaysRecommendationRecipeId: string; // 本日のおすすめ(日替わりで抽選)
+  shopUpgrades: ShopUpgradeState; // 店舗設備(陳列棚/オーブン/レジ/店舗内装)のレベル
 }

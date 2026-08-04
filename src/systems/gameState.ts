@@ -1,6 +1,7 @@
 import type { GameState } from '@/types';
 import { CHARACTERS } from '@/data/characters';
 import { RECIPES } from '@/data/recipes';
+import { createDefaultShopUpgrades } from '@/data/shopUpgrades';
 
 export const SAVE_VERSION = 1;
 export const STARTING_MONEY = 3000;
@@ -49,6 +50,7 @@ export function createInitialState(): GameState {
     logs: [],
     logSeq: 0,
     todaysRecommendationRecipeId: pickDailyRecommendation(),
+    shopUpgrades: createDefaultShopUpgrades(),
   };
 }
 

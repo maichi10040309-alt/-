@@ -1,13 +1,16 @@
 import type { CustomerTypeDef, CustomerTypeId, CustomerVisitResult, GameState, SalesShiftResult, ShelfItem } from '@/types';
 import { getRecipe, rankLabel } from '@/data/recipes';
-import { pickCustomerType, rollCustomerBudget } from '@/data/customers';
+import { pickCustomerTypeForState, rollCustomerBudget } from '@/data/customers';
+import { getRegisterCustomerCapacity } from '@/data/shopUpgrades';
 import { rollRivalDailySales } from '@/data/rivals';
 import { addLog, pickDailyRecommendation } from './gameState';
 import { computeFairPrice } from './crafting';
 
 // 調整可能パラメータ
 export const DAYS_PER_MONTH = 10; // 月間競争のサイクル(短縮版)
-export const BASE_CUSTOMERS_PER_SHIFT = 6; // 1回の接客あたりの基準来店客数
+// 1回の接客あたりの基準来店客数(レベル1=未強化状態の初期値)。
+// 実際の基準値は店舗設備(レジ)のレベルによって変わるため、判定には getRegisterCustomerCapacity() を使うこと。
+export const BASE_CUSTOMERS_PER_SHIFT = 6;
 export const CUSTOMER_VARIANCE = 3;
 export const TARGET_SALES_BASE = 1800; // 月間目標売上(基準値)
 export const TARGET_SALES_GROWTH = 250; // 月が進むごとに増える目標額
@@ -210,14 +213,15 @@ function simulateCustomerVisit(state: GameState, customer: CustomerTypeDef, budg
 
 /** プレイヤーの店で接客を行い、来店客ごとに棚の商品が売れるかシミュレーションする */
 export function runSalesShift(state: GameState): SalesShiftResult {
-  const customers = Math.max(1, Math.round(BASE_CUSTOMERS_PER_SHIFT + (Math.random() * 2 - 1) * CUSTOMER_VARIANCE));
+  const baseCustomers = getRegisterCustomerCapacity(state);
+  const customers = Math.max(1, Math.round(baseCustomers + (Math.random() * 2 - 1) * CUSTOMER_VARIANCE));
   const visits: CustomerVisitResult[] = [];
   const customerBreakdown: Partial<Record<CustomerTypeId, number>> = {};
   let itemsSold = 0;
   let revenue = 0;
 
   for (let i = 0; i < customers; i++) {
-    const customerType = pickCustomerType();
+    const customerType = pickCustomerTypeForState(state);
     const budget = rollCustomerBudget(customerType);
     customerBreakdown[customerType.id] = (customerBreakdown[customerType.id] ?? 0) + 1;
 
