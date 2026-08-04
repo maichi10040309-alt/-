@@ -1,4 +1,4 @@
-import type { GameState } from '@/types';
+import type { GameState, SalesShiftResult, CustomerTypeId } from '@/types';
 import { createInitialState } from '@/systems/gameState';
 import { saveGame, loadGame, hasSaveData } from '@/systems/save';
 import { timeLabel } from '@/systems/time';
@@ -12,6 +12,7 @@ import { CHARACTERS, getCharacter } from '@/data/characters';
 import { getShop, getShopByCharacter, PLAYER_SHOP, FLOORS, PLAYER_HOME_FLOOR, getShopsOnFloor } from '@/data/shops';
 import { MATERIALS, getMaterial } from '@/data/materials';
 import { RECIPES, getRecipe, rankLabel } from '@/data/recipes';
+import { getCustomerType } from '@/data/customers';
 import { CONTEST_STAGES, getContestStage } from '@/data/contest';
 import { CHARACTER_PORTRAITS } from '@/data/imageAssets';
 
@@ -844,7 +845,37 @@ export class Game {
   // 自分の店(棚 / 接客)
   // ---------------------------------------------------------
 
-  private openPlayerShopPanel(): void {
+  /** 接客結果パネル(来店客の内訳・お客さんの反応)のHTMLを組み立てる */
+  private shiftResultHtml(result: SalesShiftResult): string {
+    const breakdownHtml = (Object.entries(result.customerBreakdown) as [CustomerTypeId, number][])
+      .map(([id, count]) => {
+        const c = getCustomerType(id);
+        return `<span class="customer-chip">${c.icon} ${escapeHtml(c.name)} ${count}人</span>`;
+      })
+      .join('');
+
+    const MAX_REACTIONS = 5;
+    const shown = result.visits.slice(0, MAX_REACTIONS);
+    const remaining = result.visits.length - shown.length;
+    const reactionLines = shown.map((v) => {
+      if (v.purchased) {
+        return `<div>${v.customerIcon} ${escapeHtml(v.customerName)}が${escapeHtml(v.purchasedItemRank ?? '')}ランクの${escapeHtml(v.purchasedItemName ?? '')}を購入!</div>`;
+      }
+      return `<div>${v.customerIcon} ${escapeHtml(v.customerName)}は${escapeHtml(v.reason ?? '')}</div>`;
+    });
+    if (remaining > 0) reactionLines.push(`<div class="sub">ほか${remaining}人</div>`);
+
+    return `
+      <h3>📋 本日の接客結果</h3>
+      <p>${result.customers}人来店 / ${result.itemsSold}個販売 / ${result.revenue}ベリーの売上</p>
+      <h3>👥 来店客</h3>
+      <div class="row">${breakdownHtml}</div>
+      <h3>💬 お客さんの反応</h3>
+      <div class="log-box">${reactionLines.join('')}</div>
+    `;
+  }
+
+  private openPlayerShopPanel(lastResult?: SalesShiftResult): void {
     const panel = openModal(`
       <h2>🏪 ${escapeHtml(PLAYER_SHOP.name)}</h2>
       <div class="row">
@@ -856,7 +887,7 @@ export class Game {
         <button class="secondary" id="btn-research">🔬 研究する</button>
         <button class="secondary" id="btn-craft">🍰 調合する</button>
       </div>
-      <div id="shift-result"></div>
+      ${lastResult ? this.shiftResultHtml(lastResult) : ''}
       <h3>🧁 陳列棚(${this.state.shelf.length} / ${SHELF_CAPACITY}点)</h3>
       <div class="list">
         ${
@@ -889,10 +920,9 @@ export class Game {
 
     panel.querySelector('#btn-shift')!.addEventListener('click', () => {
       const result = runSalesShift(this.state);
-      panel.querySelector('#shift-result')!.innerHTML = `<p>${result.customers}人来店 / ${result.itemsSold}個販売 / ${result.revenue}ベリーの売上</p>`;
       if (result.itemsSold > 0) showToast(`💰 +${result.revenue}ベリーの売上!`, 'money');
       if (result.itemsSold >= 3) burstConfetti(this.canvas, CANVAS_W / 2, CANVAS_H * 0.3);
-      this.openPlayerShopPanel();
+      this.openPlayerShopPanel(result);
     });
     panel.querySelector('#btn-research')!.addEventListener('click', () => this.doResearch());
     panel.querySelector('#btn-craft')!.addEventListener('click', () => this.openCraftPanel());

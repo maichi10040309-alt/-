@@ -119,6 +119,51 @@ export interface MonthlyRecord {
   result: 'win' | 'lose' | 'pending';
 }
 
+// ------------------------------------------------------------
+// お客さんタイプ(接客シミュレーション用。GameStateへは保存しない一時データ)
+// ------------------------------------------------------------
+
+export type CustomerTypeId = 'child' | 'student' | 'family' | 'gourmet' | 'celebrity';
+
+export interface CustomerTypeDef {
+  id: CustomerTypeId;
+  name: string;
+  icon: string;
+  weight: number; // 出現ウェイト(合計は100である必要はない)
+  baseBudget: number;
+  budgetVariance: number;
+  preferredCategories: RecipeCategory[];
+  categoryBonus: number;
+  preferredMinRankIndex?: number; // このランク以上を好む
+  preferredRankBonus?: number;
+  lowRankPenaltyThreshold?: number; // このランク以下は敬遠される
+  lowRankPenalty?: number;
+  recommendationMultiplier: number; // 「本日のおすすめ」ボーナスへの反応の強さ
+  priceSensitivity: number; // 適正価格からの乖離にどれだけ敏感か
+  // 予算超過(予算〜予算1.2倍)ゾーンでのペナルティを弱める倍率。省略時は1(標準)。
+  budgetPenaltyFactor?: number;
+}
+
+export interface CustomerVisitResult {
+  customerTypeId: CustomerTypeId;
+  customerName: string;
+  customerIcon: string;
+  budget: number;
+  purchased: boolean;
+  purchasedItemName?: string;
+  purchasedItemRank?: string;
+  purchasedPrice?: number;
+  reason?: string;
+}
+
+export interface SalesShiftResult {
+  customers: number;
+  itemsSold: number;
+  revenue: number;
+  customerBreakdown: Partial<Record<CustomerTypeId, number>>;
+  visits: CustomerVisitResult[];
+}
+
 export interface ContestRecord {
   stage: number;
   cleared: boolean;
