@@ -61,6 +61,7 @@ export class Game {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('canvas 2d context not available');
     this.ctx = ctx;
+    this.setupCanvasResolution();
 
     this.topBar = document.createElement('div');
     this.topBar.className = 'hud-bar';
@@ -87,6 +88,20 @@ export class Game {
         gameRoot.scrollLeft = 0;
       });
     }
+  }
+
+  /**
+   * Canvasの実ピクセル解像度を devicePixelRatio に合わせて引き上げ、Retina等の
+   * 高DPI画面でぼやけないようにする。以降の描画コードは従来通り論理座標系
+   * (CANVAS_W x CANVAS_H) のまま扱えるよう ctx.scale で吸収する。
+   */
+  private setupCanvasResolution(): void {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    this.canvas.width = CANVAS_W * dpr;
+    this.canvas.height = CANVAS_H * dpr;
+    this.ctx.scale(dpr, dpr);
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.imageSmoothingQuality = 'high';
   }
 
   start(): void {

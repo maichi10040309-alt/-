@@ -1,4 +1,5 @@
 // 演出まわり(トースト通知・紙吹雪バースト)。
+import { CANVAS_W, CANVAS_H } from './mapRenderer';
 
 let toastContainer: HTMLElement | null = null;
 
@@ -50,6 +51,10 @@ export function burstConfetti(canvas: HTMLCanvasElement, originX: number, origin
   overlayCanvas.style.pointerEvents = 'none';
   canvas.parentElement?.appendChild(overlayCanvas);
   const ctx = overlayCanvas.getContext('2d')!;
+  // overlayCanvas は canvas(高DPI対応で実ピクセル解像度を持つ)と同じ実解像度で
+  // 作っているため、以降は論理座標系(CANVAS_W x CANVAS_H)で描けるようスケールを合わせる。
+  const scale = overlayCanvas.width / CANVAS_W;
+  ctx.scale(scale, scale);
 
   const particles: ConfettiParticle[] = [];
   for (let i = 0; i < 60; i++) {
@@ -70,7 +75,7 @@ export function burstConfetti(canvas: HTMLCanvasElement, originX: number, origin
   const start = performance.now();
   function tick(now: number): void {
     const elapsed = now - start;
-    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
     for (const p of particles) {
       p.vy += 0.15;
       p.x += p.vx;
