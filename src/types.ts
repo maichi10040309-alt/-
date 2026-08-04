@@ -206,6 +206,40 @@ export interface ShopUpgradeDef {
   levels: ShopUpgradeLevelDef[]; // インデックス0がレベル1
 }
 
+// ------------------------------------------------------------
+// ストロベリー店の店内レイヤー合成(背景+設備+装飾を重ねて表示する)
+// ------------------------------------------------------------
+
+export type StrawberryShopLayerId = 'background' | 'display' | 'register' | 'oven' | 'decor';
+
+export interface ShopLayerPlacement {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  // 0〜1の正規化アンカー。省略時は(0.5, 1)=下端中央(接地基準点)。
+  // 現状の描画(drawImageFitBottom)は常に下端中央アンカーを用いるため、
+  // 将来アンカーを変える設備が出た場合の拡張用に残している。
+  anchorX?: number;
+  anchorY?: number;
+  zIndex: number;
+}
+
+export interface ShopLayerAsset {
+  id: string;
+  image: string; // base64データURI。空文字/未登録時はアイコンへフォールバックする
+  placement: ShopLayerPlacement;
+  visible: boolean;
+}
+
+// 装飾(トロフィー・季節装飾・写真など)の所持状態。取得・編集システムは今回未実装で、
+// レイヤー表示へ後から差し込めるようにするための型のみ用意している。
+export interface OwnedShopDecoration {
+  id: string;
+  placementId: string;
+  visible: boolean;
+}
+
 export interface LogEntry {
   id: number;
   day: number;

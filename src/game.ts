@@ -30,7 +30,8 @@ import { CHARACTER_PORTRAITS } from '@/data/imageAssets';
 
 import { initOverlay, openModal, closeModal, closeButtonHtml, escapeHtml } from '@/ui/panels';
 import { renderMap, hitTestMap, getStandingSpot, PLAYER_HOME_SPOT, ELEVATOR_SPOT, getHallEscalatorSpot, CANVAS_W, CANVAS_H, type PlayerSprite } from '@/ui/mapRenderer';
-import { renderShopInterior, computeInteriorLayout, hitTestInterior, clampToInterior } from '@/ui/interiorRenderer';
+import { renderShopInterior, computeInteriorLayout, hitTestInterior, clampToInterior, type InteriorLayout } from '@/ui/interiorRenderer';
+import { renderStrawberryShopInterior, computeStrawberryShopLayout } from '@/ui/shopLayerRenderer';
 import { buildHud, renderTopBar } from '@/ui/hud';
 import { drawSweetIcon } from '@/ui/pixelArt';
 import { initEffects, showToast, burstConfetti, playElevatorTransition } from '@/ui/effects';
@@ -204,10 +205,16 @@ export class Game {
     return shopId === 'player_shop' ? 'strawberry' : getCharacter(getShop(shopId).characterId).portrait;
   }
 
+  /** shopIdに応じたInteriorLayoutを返す(自分の店はレイヤー合成専用の固定レイアウト、
+   *  NPCの店は従来通り部屋画像の自然サイズから動的に計算したレイアウトを使う) */
+  private currentInteriorLayout(shopId: string): InteriorLayout {
+    return shopId === 'player_shop' ? computeStrawberryShopLayout() : computeInteriorLayout(this.interiorRoomKey(shopId));
+  }
+
   private handleInteriorClick(x: number, y: number): void {
     const shopId = this.insideShopId;
     if (!shopId) return;
-    const layout = computeInteriorLayout(this.interiorRoomKey(shopId));
+    const layout = this.currentInteriorLayout(shopId);
     const hit = hitTestInterior(x, y, layout);
 
     if (hit?.type === 'exit') {
@@ -230,7 +237,7 @@ export class Game {
   // ---------------------------------------------------------
 
   private enterShopInterior(shopId: string): void {
-    const layout = computeInteriorLayout(this.interiorRoomKey(shopId));
+    const layout = this.currentInteriorLayout(shopId);
     this.insideShopId = shopId;
     this.player.x = layout.entrance.x;
     this.player.y = layout.entrance.y;
@@ -267,7 +274,7 @@ export class Game {
 
   private render(): void {
     if (this.insideShopId === 'player_shop') {
-      renderShopInterior(this.ctx, 'strawberry', null, PLAYER_SHOP.name, this.animClock, this.player);
+      renderStrawberryShopInterior(this.ctx, this.state, this.animClock, this.player);
     } else if (this.insideShopId) {
       const char = getCharacter(getShop(this.insideShopId).characterId);
       renderShopInterior(this.ctx, char.portrait, char, `${char.name}のお店`, this.animClock, this.player);
