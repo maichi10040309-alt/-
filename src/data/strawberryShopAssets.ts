@@ -11,6 +11,9 @@ import type { ShopUpgradeLevel } from '@/types';
 // 追加したら、対応するレコードへ1行足すだけで反映される。
 
 import interiorLv1 from '@/assets/shops/strawberry/background/interior_lv1.jpg';
+import displayLv1 from '@/assets/shops/strawberry/display/display_lv1.webp';
+import displayLv2 from '@/assets/shops/strawberry/display/display_lv2.webp';
+import displayLv3 from '@/assets/shops/strawberry/display/display_lv3.webp';
 
 const INTERIOR_IMAGES: Partial<Record<ShopUpgradeLevel, string>> = {
   1: interiorLv1,
@@ -18,7 +21,10 @@ const INTERIOR_IMAGES: Partial<Record<ShopUpgradeLevel, string>> = {
 };
 
 const DISPLAY_IMAGES: Partial<Record<ShopUpgradeLevel, string>> = {
-  // 1: displayLv1, 2: displayLv2, 3: displayLv3, 4: displayLv4, // 画像が揃い次第追加
+  1: displayLv1,
+  2: displayLv2,
+  3: displayLv3,
+  // 4: displayLv4, // 画像が揃い次第追加
 };
 
 const REGISTER_IMAGES: Partial<Record<ShopUpgradeLevel, string>> = {
