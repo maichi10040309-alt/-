@@ -232,6 +232,37 @@ export interface ShopLayerAsset {
   visible: boolean;
 }
 
+// ------------------------------------------------------------
+// 設備レイヤーの見た目補正(位置の微調整・拡大・背景となじませる色調・接地影)。
+// ゲームロジック(設備レベルの効果値等)とは無関係の、純粋な表示調整専用の型。
+// ------------------------------------------------------------
+
+export interface ShopLayerShadowAdjustment {
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  alpha: number; // 0〜1
+}
+
+export interface ShopLayerVisualAdjustment {
+  brightness: number; // ctx.filter の brightness()
+  saturate: number; // ctx.filter の saturate()
+  contrast: number; // ctx.filter の contrast()
+  opacity: number; // ctx.globalAlpha
+  offsetX: number; // 配置スペースの接地基準点からの水平方向オフセット(px)
+  offsetY: number; // 配置スペースの接地基準点からの垂直方向オフセット(px)
+  scale: number; // 配置スペースを接地基準点固定で拡大縮小する倍率
+  shadow: ShopLayerShadowAdjustment;
+}
+
+// レベルごとの微調整(透明余白や外形差の吸収用)。オフセットは加算、スケールは乗算で
+// ベースのShopLayerVisualAdjustmentへ重ねる。現時点では全レベル恒等値で構わない。
+export interface ShopLayerLevelAdjustment {
+  offsetX: number;
+  offsetY: number;
+  scale: number;
+}
+
 // 装飾(トロフィー・季節装飾・写真など)の所持状態。取得・編集システムは今回未実装で、
 // レイヤー表示へ後から差し込めるようにするための型のみ用意している。
 export interface OwnedShopDecoration {

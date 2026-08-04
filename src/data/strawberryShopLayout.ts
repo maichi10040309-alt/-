@@ -1,4 +1,4 @@
-import type { ShopLayerPlacement } from '@/types';
+import type { ShopLayerLevelAdjustment, ShopLayerPlacement, ShopLayerVisualAdjustment, ShopUpgradeLevel } from '@/types';
 
 // ストロベリー店(プレイヤーの店)の店内レイヤー配置。
 // 添付の「ストロベリー店 レイアウト図(設備配置スペース設計図)」を基準に、
@@ -47,6 +47,57 @@ export const STRAWBERRY_SHOP_OVEN_PLACEMENT: ShopLayerPlacement = {
   width: 110,
   height: 140,
   zIndex: 15,
+};
+
+// ------------------------------------------------------------
+// 設備レイヤーの見た目補正(位置微調整・拡大・背景へのなじみ・接地影)。
+// STRAWBERRY_SHOP_*_PLACEMENT は「レイアウト図で決まった設備の配置スペース」を
+// 表す不変の基準であり、実際の見た目位置・サイズはこの補正値を接地基準点
+// (配置スペースの下端中央 + offsetX/offsetY)からのオフセット/倍率として重ねて決める。
+// これにより「配置スペース自体は変えず、見た目だけ微調整する」を両立できる。
+//
+// 陳列棚は実素材の輪郭線・彩度・コントラストが背景より強く、貼り付けたように
+// 浮いて見えていたため、brightness/saturate/contrast/opacityで背景の暖色照明へ
+// トーンを合わせ、接地影(短い楕円・低アルファ・暖色)を追加して床に置かれている
+// 質感を出している。レジ/オーブンは実素材が未投入のため、現時点では恒等値
+// (見た目に影響なし)のまま今後の調整用に構造だけ用意している。
+// ------------------------------------------------------------
+
+const NEUTRAL_SHOP_LAYER_ADJUSTMENT: ShopLayerVisualAdjustment = {
+  brightness: 1,
+  saturate: 1,
+  contrast: 1,
+  opacity: 1,
+  offsetX: 0,
+  offsetY: 0,
+  scale: 1,
+  shadow: { offsetX: 0, offsetY: 0, blur: 0, alpha: 0 },
+};
+
+export const SHOP_LAYER_VISUAL_ADJUSTMENTS: Record<'display' | 'register' | 'oven', ShopLayerVisualAdjustment> = {
+  display: {
+    brightness: 0.94,
+    saturate: 0.87,
+    contrast: 0.91,
+    opacity: 0.97,
+    offsetX: 30, // 観葉植物との間に余白ができる位置まで右へ
+    offsetY: 8, // 手前(床の奥行き方向)へわずかに
+    scale: 1.1, // 接地基準点固定で全体を約10%拡大
+    shadow: { offsetX: 1, offsetY: 5, blur: 6, alpha: 0.14 },
+  },
+  register: { ...NEUTRAL_SHOP_LAYER_ADJUSTMENT, shadow: { ...NEUTRAL_SHOP_LAYER_ADJUSTMENT.shadow } },
+  oven: { ...NEUTRAL_SHOP_LAYER_ADJUSTMENT, shadow: { ...NEUTRAL_SHOP_LAYER_ADJUSTMENT.shadow } },
+};
+
+const NEUTRAL_LEVEL_ADJUSTMENT: ShopLayerLevelAdjustment = { offsetX: 0, offsetY: 0, scale: 1 };
+
+// レベルごとの微調整(Lv.2〜4の実素材が増え、透明余白や外形差が出た際にここへ加筆する)。
+// 現時点では全レベル恒等値。
+export const STRAWBERRY_SHOP_DISPLAY_LEVEL_ADJUSTMENTS: Record<ShopUpgradeLevel, ShopLayerLevelAdjustment> = {
+  1: { ...NEUTRAL_LEVEL_ADJUSTMENT },
+  2: { ...NEUTRAL_LEVEL_ADJUSTMENT },
+  3: { ...NEUTRAL_LEVEL_ADJUSTMENT },
+  4: { ...NEUTRAL_LEVEL_ADJUSTMENT },
 };
 
 // ④装飾スペース候補(奥の壁面・左右の壁面・固定棚付近)。
