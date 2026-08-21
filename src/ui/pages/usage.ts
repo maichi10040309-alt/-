@@ -13,12 +13,17 @@ interface DraftRow {
   unitPrice: number;
 }
 
+type Mode = 'input' | 'list';
+
+let mode: Mode = 'input';
 let selectedClientId = '';
 let selectedMonth = currentYearMonth();
 let draftRows: DraftRow[] = [];
+let currentRoot: HTMLElement | null = null;
 
 export function renderUsagePage(root: HTMLElement) {
-  const { clients, items } = store.getState();
+  currentRoot = root;
+  const { clients } = store.getState();
   const sortedClients = [...clients].sort((a, b) => a.kana.localeCompare(b.kana, 'ja'));
 
   if (!selectedClientId && sortedClients.length > 0) {
@@ -28,11 +33,137 @@ export function renderUsagePage(root: HTMLElement) {
   root.innerHTML = `
     <div class="toolbar">
       <div class="page-subtitle" style="margin-bottom:0">
-        利用者・対象月を選び、レンタル中の品目を入力してください。介護保険品目は単位数を入れると
-        利用者負担割合から自己負担額を自動計算します。保存すると4か月ごとの請求に自動反映されます。
+        介護保険品目は単位数を入れると利用者負担割合から自己負担額を自動計算します。
+        保存すると4か月ごとの請求に自動反映されます。
       </div>
       <button class="btn btn-sm" id="btn-open-import">📥 Excelから一括取り込み</button>
     </div>
+    <div style="margin-bottom:16px">
+      <button class="btn btn-sm ${mode === 'input' ? 'btn-primary' : ''}" id="tab-input">📝 入力</button>
+      <button class="btn btn-sm ${mode === 'list' ? 'btn-primary' : ''}" id="tab-list">📋 一覧</button>
+    </div>
+    <div id="usage-section"></div>
+  `;
+
+  root.querySelector('#btn-open-import')?.addEventListener('click', () => openImportModal());
+  root.querySelector('#tab-input')?.addEventListener('click', () => {
+    mode = 'input';
+    renderUsagePage(root);
+  });
+  root.querySelector('#tab-list')?.addEventListener('click', () => {
+    mode = 'list';
+    renderUsagePage(root);
+  });
+
+  const section = root.querySelector('#usage-section') as HTMLElement;
+  if (mode === 'list') {
+    renderListSection(section, sortedClients);
+  } else {
+    renderInputSection(section, sortedClients);
+  }
+}
+
+function editClient(clientId: string) {
+  selectedClientId = clientId;
+  mode = 'input';
+  if (currentRoot) renderUsagePage(currentRoot);
+}
+
+// ==================== 一覧タブ ====================
+
+function renderListSection(section: HTMLElement, clients: ReturnType<typeof store.getState>['clients']) {
+  const usageEntries = store.getState().usageEntries;
+
+  section.innerHTML = `
+    <div class="card">
+      <div class="form-grid" style="margin-bottom:16px;grid-template-columns:200px">
+        <div class="form-field">
+          <label>対象月</label>
+          <input type="month" id="f-list-month" value="${selectedMonth}" />
+        </div>
+      </div>
+      <p id="list-summary" style="font-size:13px;margin:0 0 10px"></p>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>利用者名</th>
+              <th>状態</th>
+              <th>入力状況</th>
+              <th class="num">品目数</th>
+              <th class="num">合計金額</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="list-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  section.querySelector('#f-list-month')?.addEventListener('change', (e) => {
+    const v = (e.target as HTMLInputElement).value;
+    if (v) selectedMonth = v;
+    renderListRows(clients, usageEntries);
+  });
+
+  renderListRows(clients, usageEntries);
+}
+
+function renderListRows(
+  clients: ReturnType<typeof store.getState>['clients'],
+  usageEntries: ReturnType<typeof store.getState>['usageEntries']
+) {
+  const tbody = document.querySelector('#list-rows');
+  if (!tbody) return;
+
+  if (clients.length === 0) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">利用者が登録されていません。</td></tr>`;
+    return;
+  }
+
+  let grandTotal = 0;
+  let enteredCount = 0;
+
+  const rows = clients.map((c) => {
+    const entries = usageEntries.filter((u) => u.clientId === c.id && u.yearMonth === selectedMonth);
+    const total = entries.reduce((sum, e) => sum + e.amount, 0);
+    grandTotal += total;
+    if (entries.length > 0) enteredCount++;
+    return `
+      <tr>
+        <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
+        <td>${c.active ? '<span class="badge badge-success">利用中</span>' : '<span class="badge badge-muted">終了</span>'}</td>
+        <td>${entries.length > 0 ? '<span class="badge badge-success">入力済み</span>' : '<span class="badge badge-warning">未入力</span>'}</td>
+        <td class="num">${entries.length}</td>
+        <td class="num">${formatYen(total)}</td>
+        <td class="actions-cell"><button class="btn-link js-edit-client" data-id="${c.id}">入力へ</button></td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = rows.join('');
+
+  const summary = document.querySelector('#list-summary');
+  if (summary) {
+    summary.innerHTML = `${formatYmJapanese(selectedMonth)}: <strong>${enteredCount} / ${clients.length}名</strong> 入力済み、
+      合計 <strong>${formatYen(grandTotal)}</strong>`;
+  }
+
+  tbody.querySelectorAll('.js-edit-client').forEach((el) =>
+    el.addEventListener('click', (e) => {
+      const id = (e.target as HTMLElement).dataset.id;
+      if (id) editClient(id);
+    })
+  );
+}
+
+// ==================== 入力タブ ====================
+
+function renderInputSection(section: HTMLElement, sortedClients: ReturnType<typeof store.getState>['clients']) {
+  const items = store.getState().items;
+
+  section.innerHTML = `
     <div class="card">
       ${
         sortedClients.length === 0
@@ -90,27 +221,25 @@ export function renderUsagePage(root: HTMLElement) {
     </div>
   `;
 
-  root.querySelector('#btn-open-import')?.addEventListener('click', () => openImportModal());
-
   if (sortedClients.length === 0) return;
 
   loadDraftFromStore();
   renderRows(items);
 
-  root.querySelector('#f-client')?.addEventListener('change', (e) => {
+  section.querySelector('#f-client')?.addEventListener('change', (e) => {
     selectedClientId = (e.target as HTMLSelectElement).value;
     loadDraftFromStore();
     renderRows(items);
   });
 
-  root.querySelector('#f-month')?.addEventListener('change', (e) => {
+  section.querySelector('#f-month')?.addEventListener('change', (e) => {
     const v = (e.target as HTMLInputElement).value;
     if (v) selectedMonth = v;
     loadDraftFromStore();
     renderRows(items);
   });
 
-  root.querySelector('#btn-add-row')?.addEventListener('click', () => {
+  section.querySelector('#btn-add-row')?.addEventListener('click', () => {
     const firstItem = items[0];
     draftRows.push({
       itemId: firstItem?.id ?? '',
@@ -121,7 +250,7 @@ export function renderUsagePage(root: HTMLElement) {
     renderRows(items);
   });
 
-  root.querySelector('#btn-copy-prev')?.addEventListener('click', async () => {
+  section.querySelector('#btn-copy-prev')?.addEventListener('click', async () => {
     const prevMonth = addMonths(selectedMonth, -1);
     const prevEntries = store
       .getState()
@@ -142,7 +271,7 @@ export function renderUsagePage(root: HTMLElement) {
     renderRows(items);
   });
 
-  root.querySelector('#btn-save')?.addEventListener('click', () => {
+  section.querySelector('#btn-save')?.addEventListener('click', () => {
     if (!selectedClientId || !selectedMonth) return;
     const entries: UsageEntry[] = draftRows
       .filter((r) => r.itemId)
