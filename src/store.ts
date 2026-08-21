@@ -1,4 +1,4 @@
-import type { AppState, Client, Invoice, RentalItem, UsageEntry } from '@/types';
+import type { AppState, Client, ClientEvent, Invoice, LateAdjustment, RentalItem, UsageEntry } from '@/types';
 import { DEFAULT_ITEMS } from '@/data/defaultItems';
 
 const STORAGE_KEY = 'care-rental-billing-v1';
@@ -34,7 +34,10 @@ function migrateState(state: AppState): AppState {
     }
     invoice.nonTaxableTotal = nonTaxableTotal;
     invoice.taxableTotal = taxableTotal;
+    if (!invoice.adjustments) invoice.adjustments = [];
   }
+  if (!state.clientEvents) state.clientEvents = [];
+  if (!state.lateAdjustments) state.lateAdjustments = [];
   return state;
 }
 
@@ -62,6 +65,8 @@ function loadState(): AppState {
       fax: '',
       bankInfo: '',
     },
+    clientEvents: [],
+    lateAdjustments: [],
   };
 }
 
@@ -101,6 +106,8 @@ class Store {
     this.state.clients = this.state.clients.filter((c) => c.id !== id);
     this.state.usageEntries = this.state.usageEntries.filter((u) => u.clientId !== id);
     this.state.invoices = this.state.invoices.filter((i) => i.clientId !== id);
+    this.state.clientEvents = this.state.clientEvents.filter((e) => e.clientId !== id);
+    this.state.lateAdjustments = this.state.lateAdjustments.filter((a) => a.clientId !== id);
     this.commit();
   }
 
@@ -131,6 +138,32 @@ class Store {
     const idx = this.state.invoices.findIndex((i) => i.id === invoice.id);
     if (idx >= 0) this.state.invoices[idx] = invoice;
     else this.state.invoices.push(invoice);
+    this.commit();
+  }
+
+  // ---- ClientEvent(新規・終了・休止などの履歴) ----
+  upsertClientEvent(event: ClientEvent) {
+    const idx = this.state.clientEvents.findIndex((e) => e.id === event.id);
+    if (idx >= 0) this.state.clientEvents[idx] = event;
+    else this.state.clientEvents.push(event);
+    this.commit();
+  }
+
+  deleteClientEvent(id: string) {
+    this.state.clientEvents = this.state.clientEvents.filter((e) => e.id !== id);
+    this.commit();
+  }
+
+  // ---- LateAdjustment(月遅れ等の調整) ----
+  upsertLateAdjustment(adjustment: LateAdjustment) {
+    const idx = this.state.lateAdjustments.findIndex((a) => a.id === adjustment.id);
+    if (idx >= 0) this.state.lateAdjustments[idx] = adjustment;
+    else this.state.lateAdjustments.push(adjustment);
+    this.commit();
+  }
+
+  deleteLateAdjustment(id: string) {
+    this.state.lateAdjustments = this.state.lateAdjustments.filter((a) => a.id !== id);
     this.commit();
   }
 

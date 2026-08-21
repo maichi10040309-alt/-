@@ -1,16 +1,17 @@
 import { store, newId } from '@/store';
-import type { Invoice } from '@/types';
+import type { Client, Invoice, LateAdjustment, TaxCategory } from '@/types';
 import { TAX_CATEGORY_LABELS } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
-import { currentYearMonth, formatDateJapanese, formatYmJapanese, todayIso } from '@/utils/date';
-import { buildInvoiceMonths, getClientCycles } from '@/utils/billing';
+import { currentYearMonth, formatDateJapanese, formatYmJapanese, isValidYearMonth, todayIso } from '@/utils/date';
+import { buildInvoiceMonths, cycleStartForMonth, getClientCycles } from '@/utils/billing';
 import { navigate } from '@/ui/router';
-import { showConfirm } from '@/ui/components/dialog';
+import { showAlert, showConfirm } from '@/ui/components/dialog';
+import { openModal } from '@/ui/components/modal';
 
 let referenceMonth = currentYearMonth();
 
 export function renderInvoicesPage(root: HTMLElement) {
-  const { clients, usageEntries, invoices } = store.getState();
+  const { clients, usageEntries, invoices, lateAdjustments } = store.getState();
 
   const dueRows: {
     clientId: string;
@@ -81,6 +82,40 @@ export function renderInvoicesPage(root: HTMLElement) {
     </div>
 
     <div class="card">
+      <div class="toolbar">
+        <h3 class="card-title" style="margin:0">月遅れ等の調整 ${lateAdjustments.length > 0 ? `<span class="badge badge-muted">${lateAdjustments.length}件</span>` : ''}</h3>
+        <button class="btn btn-sm" id="btn-add-adjustment" ${clients.length === 0 ? 'disabled' : ''}>＋ 調整を追加</button>
+      </div>
+      <p class="page-subtitle" style="margin:0 0 12px">
+        過去の提供月の実績を後日追加する場合の入力です。指定した「計上する請求月」を含む請求サイクルの請求書作成時にまとめて反映されます。
+      </p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>利用者</th>
+            <th>本来の提供月</th>
+            <th>計上する請求月</th>
+            <th>理由</th>
+            <th>品目</th>
+            <th class="num">金額</th>
+            <th>状態</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="adjustment-rows">
+          ${
+            lateAdjustments.length === 0
+              ? `<tr class="empty-row"><td colspan="8">調整はまだありません。</td></tr>`
+              : [...lateAdjustments]
+                  .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                  .map((a) => adjustmentRowHtml(a, clients, invoices))
+                  .join('')
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
       <h3 class="card-title">請求書一覧</h3>
       <table class="data-table">
         <thead>
@@ -122,7 +157,11 @@ export function renderInvoicesPage(root: HTMLElement) {
     const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
     const cycle = cycles.find((c) => c.cycleStartMonth === cycleStartMonth);
     if (!cycle) return;
-    const { months, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(cycle, usageEntries);
+    const { months, adjustments, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(
+      cycle,
+      usageEntries,
+      lateAdjustments
+    );
     const invoice: Invoice = {
       id: newId(),
       invoiceNo: '',
@@ -130,6 +169,7 @@ export function renderInvoicesPage(root: HTMLElement) {
       cycleStartMonth: cycle.cycleStartMonth,
       cycleEndMonth: cycle.cycleEndMonth,
       months,
+      adjustments,
       totalAmount,
       nonTaxableTotal,
       taxableTotal,
@@ -145,6 +185,165 @@ export function renderInvoicesPage(root: HTMLElement) {
     const btn = (e.target as HTMLElement).closest('.js-view') as HTMLElement | null;
     if (!btn) return;
     navigate(`invoices/${btn.dataset.id}`);
+  });
+
+  root.querySelector('#btn-add-adjustment')?.addEventListener('click', () => {
+    if (clients.length === 0) return;
+    openAdjustmentModal(clients);
+  });
+
+  root.querySelector('#adjustment-rows')?.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement;
+    const id = target.getAttribute('data-id');
+    if (!id) return;
+    if (target.classList.contains('js-edit-adjustment')) {
+      const adj = store.getState().lateAdjustments.find((a) => a.id === id);
+      if (adj) openAdjustmentModal(clients, adj);
+    } else if (target.classList.contains('js-delete-adjustment')) {
+      if (await showConfirm('この調整を削除します。よろしいですか?')) {
+        store.deleteLateAdjustment(id);
+      }
+    }
+  });
+}
+
+function adjustmentRowHtml(a: LateAdjustment, clients: Client[], invoices: Invoice[]): string {
+  const client = clients.find((c) => c.id === a.clientId);
+  const cycleStart = cycleStartForMonth(a.billedYearMonth);
+  const alreadyInvoiced = invoices.some((inv) => inv.clientId === a.clientId && inv.cycleStartMonth === cycleStart);
+  return `
+    <tr>
+      <td>${escapeHtml(client?.name ?? '(削除済み)')}</td>
+      <td>${formatYmJapanese(a.originalYearMonth)}</td>
+      <td>${formatYmJapanese(a.billedYearMonth)}</td>
+      <td>${escapeHtml(a.reason)}</td>
+      <td>${escapeHtml(a.itemName)}</td>
+      <td class="num">${formatYen(a.amount)}</td>
+      <td>${alreadyInvoiced ? '<span class="badge badge-success">請求済み</span>' : '<span class="badge badge-warning">未請求</span>'}</td>
+      <td class="actions-cell">
+        <button class="btn-link js-edit-adjustment" data-id="${a.id}">編集</button>
+        <button class="btn-link js-delete-adjustment" data-id="${a.id}" style="color:#dc2626">削除</button>
+      </td>
+    </tr>
+  `;
+}
+
+function openAdjustmentModal(clients: Client[], existing?: LateAdjustment) {
+  const isEdit = !!existing;
+  const { box, close } = openModal(isEdit ? '月遅れ等調整の編集' : '月遅れ等調整の追加');
+
+  const a: LateAdjustment = existing ?? {
+    id: newId(),
+    clientId: clients[0].id,
+    originalYearMonth: currentYearMonth(),
+    billedYearMonth: currentYearMonth(),
+    reason: '暫定利用による月遅れ請求',
+    itemName: '',
+    quantity: 1,
+    unitPrice: 0,
+    amount: 0,
+    taxCategory: 'nontaxable',
+    note: '',
+    createdAt: new Date().toISOString(),
+  };
+
+  box.insertAdjacentHTML(
+    'beforeend',
+    `
+    <div class="form-grid">
+      <div class="form-field full">
+        <label>利用者 *</label>
+        <select id="f-client">
+          ${clients.map((c) => `<option value="${c.id}" ${c.id === a.clientId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-field">
+        <label>本来の提供月 *</label>
+        <input type="month" id="f-original-month" value="${a.originalYearMonth}" />
+      </div>
+      <div class="form-field">
+        <label>計上する請求月 *</label>
+        <input type="month" id="f-billed-month" value="${a.billedYearMonth}" />
+      </div>
+      <div class="form-field full">
+        <label>理由</label>
+        <input type="text" id="f-reason" placeholder="例: 暫定利用による月遅れ請求、返戻等による再請求、過誤による返金" value="${escapeHtml(a.reason)}" />
+      </div>
+      <div class="form-field full">
+        <label>品目名 *</label>
+        <input type="text" id="f-item-name" value="${escapeHtml(a.itemName)}" />
+      </div>
+      <div class="form-field">
+        <label>数量</label>
+        <input type="number" id="f-quantity" step="0.5" value="${a.quantity}" />
+      </div>
+      <div class="form-field">
+        <label>単価(円)</label>
+        <input type="number" id="f-unit-price" step="1" value="${a.unitPrice}" />
+      </div>
+      <div class="form-field">
+        <label>税区分</label>
+        <select id="f-tax">
+          <option value="nontaxable" ${a.taxCategory === 'nontaxable' ? 'selected' : ''}>非課税</option>
+          <option value="taxable" ${a.taxCategory === 'taxable' ? 'selected' : ''}>課税</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>金額(円、返金はマイナス)</label>
+        <input type="number" id="f-amount" step="1" value="${a.quantity * a.unitPrice}" />
+      </div>
+      <div class="form-field full">
+        <label>備考</label>
+        <textarea id="f-note">${escapeHtml(a.note)}</textarea>
+      </div>
+    </div>
+    <p style="color:var(--color-text-muted);font-size:12px;margin-top:8px">
+      ※ 金額欄は数量×単価で自動計算されますが、直接書き換えることもできます。
+    </p>
+    <div class="form-actions">
+      <button class="btn" id="btn-cancel">キャンセル</button>
+      <button class="btn btn-primary" id="btn-save">保存</button>
+    </div>
+  `
+  );
+
+  const qtyInput = box.querySelector('#f-quantity') as HTMLInputElement;
+  const priceInput = box.querySelector('#f-unit-price') as HTMLInputElement;
+  const amountInput = box.querySelector('#f-amount') as HTMLInputElement;
+  const syncAmount = () => {
+    amountInput.value = String(Number(qtyInput.value || 0) * Number(priceInput.value || 0));
+  };
+  qtyInput.addEventListener('input', syncAmount);
+  priceInput.addEventListener('input', syncAmount);
+
+  box.querySelector('#btn-cancel')?.addEventListener('click', close);
+  box.querySelector('#btn-save')?.addEventListener('click', async () => {
+    const originalYearMonth = (box.querySelector('#f-original-month') as HTMLInputElement).value;
+    const billedYearMonth = (box.querySelector('#f-billed-month') as HTMLInputElement).value;
+    const itemName = (box.querySelector('#f-item-name') as HTMLInputElement).value.trim();
+    if (!isValidYearMonth(originalYearMonth) || !isValidYearMonth(billedYearMonth)) {
+      await showAlert('提供月と計上する請求月を選択してください。');
+      return;
+    }
+    if (!itemName) {
+      await showAlert('品目名を入力してください。');
+      return;
+    }
+    const updated: LateAdjustment = {
+      ...a,
+      clientId: (box.querySelector('#f-client') as HTMLSelectElement).value,
+      originalYearMonth,
+      billedYearMonth,
+      reason: (box.querySelector('#f-reason') as HTMLInputElement).value.trim(),
+      itemName,
+      quantity: Number(qtyInput.value) || 0,
+      unitPrice: Number(priceInput.value) || 0,
+      amount: Number(amountInput.value) || 0,
+      taxCategory: (box.querySelector('#f-tax') as HTMLSelectElement).value as TaxCategory,
+      note: (box.querySelector('#f-note') as HTMLTextAreaElement).value.trim(),
+    };
+    store.upsertLateAdjustment(updated);
+    close();
   });
 }
 
@@ -219,6 +418,8 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
 
       ${invoice.months.map(monthBlockHtml).join('')}
 
+      ${invoice.adjustments.length > 0 ? adjustmentsBlockHtml(invoice.adjustments) : ''}
+
       ${
         company.bankInfo
           ? `<div class="card" style="margin-top:20px"><h3 class="card-title">お振込先</h3><div style="white-space:pre-line">${escapeHtml(company.bankInfo)}</div></div>`
@@ -239,6 +440,49 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       issuedDate: todayIso(),
     });
   });
+}
+
+function adjustmentsBlockHtml(adjustments: Invoice['adjustments']): string {
+  const total = adjustments.reduce((sum, a) => sum + a.amount, 0);
+  return `
+    <div class="invoice-month-block">
+      <h4>月遅れ等の調整</h4>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>本来の提供月</th>
+            <th>理由</th>
+            <th>品目</th>
+            <th class="num">数量</th>
+            <th class="num">単価</th>
+            <th>税区分</th>
+            <th class="num">金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${adjustments
+            .map(
+              (a) => `
+            <tr>
+              <td>${formatYmJapanese(a.originalYearMonth)}</td>
+              <td>${escapeHtml(a.reason)}</td>
+              <td>${escapeHtml(a.itemName)}</td>
+              <td class="num">${a.quantity}</td>
+              <td class="num">${formatYen(a.unitPrice)}</td>
+              <td>${TAX_CATEGORY_LABELS[a.taxCategory]}</td>
+              <td class="num">${formatYen(a.amount)}</td>
+            </tr>
+          `
+            )
+            .join('')}
+          <tr>
+            <td colspan="6" style="text-align:right;font-weight:600">調整小計</td>
+            <td class="num" style="font-weight:600">${formatYen(total)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function monthBlockHtml(month: Invoice['months'][number]): string {

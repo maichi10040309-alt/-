@@ -86,6 +86,16 @@ export interface InvoiceMonth {
   taxableSubtotal: number;
 }
 
+export interface InvoiceAdjustmentLine {
+  originalYearMonth: YearMonth;
+  reason: string;
+  itemName: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+  taxCategory: TaxCategory;
+}
+
 export interface Invoice {
   id: string;
   invoiceNo: string; // 請求書番号
@@ -93,11 +103,54 @@ export interface Invoice {
   cycleStartMonth: YearMonth;
   cycleEndMonth: YearMonth;
   months: InvoiceMonth[];
+  adjustments: InvoiceAdjustmentLine[]; // 月遅れ等の調整分
   totalAmount: number;
   nonTaxableTotal: number;
   taxableTotal: number;
   status: InvoiceStatus;
   issuedDate: string | null; // "YYYY-MM-DD"
+  createdAt: string; // ISO日時
+}
+
+// 利用者の状態変化履歴(旧Excelの「新規・終了」「休止」シートに相当)
+export type ClientEventType = '新規' | '追加' | '変更' | '減少' | '交換' | '終了' | '休止' | '再開';
+
+export const CLIENT_EVENT_TYPE_LABELS: Record<ClientEventType, string> = {
+  新規: '新規',
+  追加: '追加',
+  変更: '変更',
+  減少: '減少',
+  交換: '交換',
+  終了: '終了',
+  休止: '休止',
+  再開: '再開',
+};
+
+export interface ClientEvent {
+  id: string;
+  clientId: string;
+  type: ClientEventType;
+  date: string; // YYYY-MM-DD (開始日/終了日/休止日/再開日などを統一)
+  content: string; // 内容(例: 車いす、ベッド一式 など自由記述)
+  note: string;
+  createdAt: string; // ISO日時
+}
+
+// 月遅れ等の調整(旧Excelの「月遅れ等」シートに相当)。
+// 過去の提供月(originalYearMonth)の実績を、後日発覚した分として
+// 現在進行中の請求サイクル(billedYearMonthが含まれるサイクル)にまとめて計上する。
+export interface LateAdjustment {
+  id: string;
+  clientId: string;
+  originalYearMonth: YearMonth; // 本来の提供月
+  billedYearMonth: YearMonth; // この月を含む請求サイクルの請求書に計上する
+  reason: string; // 理由(例: 暫定利用による月遅れ請求、返戻等による再請求、過誤による返金 など)
+  itemName: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number; // 金額(返金の場合はマイナス)
+  taxCategory: TaxCategory;
+  note: string;
   createdAt: string; // ISO日時
 }
 
@@ -117,4 +170,6 @@ export interface AppState {
   invoices: Invoice[];
   invoiceSeq: number;
   company: CompanySettings;
+  clientEvents: ClientEvent[];
+  lateAdjustments: LateAdjustment[];
 }

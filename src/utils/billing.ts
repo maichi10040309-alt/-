@@ -1,4 +1,4 @@
-import type { Client, Invoice, UsageEntry, YearMonth } from '@/types';
+import type { Client, Invoice, LateAdjustment, UsageEntry, YearMonth } from '@/types';
 import { addMonths, parseYearMonth, ymCompare } from '@/utils/date';
 
 export const CYCLE_LENGTH = 4; // 請求は4か月ごと
@@ -90,8 +90,9 @@ export function getClientCycles(
 
 export function buildInvoiceMonths(
   cycle: BillingCycle,
-  usageEntries: UsageEntry[]
-): Pick<Invoice, 'months' | 'totalAmount' | 'nonTaxableTotal' | 'taxableTotal'> {
+  usageEntries: UsageEntry[],
+  lateAdjustments: LateAdjustment[] = []
+): Pick<Invoice, 'months' | 'adjustments' | 'totalAmount' | 'nonTaxableTotal' | 'taxableTotal'> {
   const months: Invoice['months'] = cycle.months.map((ym) => {
     const entries = usageEntries.filter(
       (u) => u.clientId === cycle.clientId && u.yearMonth === ym
@@ -112,8 +113,37 @@ export function buildInvoiceMonths(
       .reduce((sum, l) => sum + l.amount, 0);
     return { yearMonth: ym, lines, subtotal, nonTaxableSubtotal, taxableSubtotal };
   });
-  const totalAmount = months.reduce((sum, m) => sum + m.subtotal, 0);
-  const nonTaxableTotal = months.reduce((sum, m) => sum + m.nonTaxableSubtotal, 0);
-  const taxableTotal = months.reduce((sum, m) => sum + m.taxableSubtotal, 0);
-  return { months, totalAmount, nonTaxableTotal, taxableTotal };
+
+  const adjustments: Invoice['adjustments'] = lateAdjustments
+    .filter(
+      (a) => a.clientId === cycle.clientId && cycleStartForMonth(a.billedYearMonth) === cycle.cycleStartMonth
+    )
+    .map((a) => ({
+      originalYearMonth: a.originalYearMonth,
+      reason: a.reason,
+      itemName: a.itemName,
+      quantity: a.quantity,
+      unitPrice: a.unitPrice,
+      amount: a.amount,
+      taxCategory: a.taxCategory,
+    }));
+
+  const monthsTotal = months.reduce((sum, m) => sum + m.subtotal, 0);
+  const monthsNonTaxable = months.reduce((sum, m) => sum + m.nonTaxableSubtotal, 0);
+  const monthsTaxable = months.reduce((sum, m) => sum + m.taxableSubtotal, 0);
+  const adjustmentsTotal = adjustments.reduce((sum, a) => sum + a.amount, 0);
+  const adjustmentsNonTaxable = adjustments
+    .filter((a) => a.taxCategory === 'nontaxable')
+    .reduce((sum, a) => sum + a.amount, 0);
+  const adjustmentsTaxable = adjustments
+    .filter((a) => a.taxCategory === 'taxable')
+    .reduce((sum, a) => sum + a.amount, 0);
+
+  return {
+    months,
+    adjustments,
+    totalAmount: monthsTotal + adjustmentsTotal,
+    nonTaxableTotal: monthsNonTaxable + adjustmentsNonTaxable,
+    taxableTotal: monthsTaxable + adjustmentsTaxable,
+  };
 }
