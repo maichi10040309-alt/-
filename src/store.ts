@@ -38,6 +38,10 @@ function migrateState(state: AppState): AppState {
   }
   if (!state.clientEvents) state.clientEvents = [];
   if (!state.lateAdjustments) state.lateAdjustments = [];
+  if (!state.company.companyName && !state.company.address) {
+    state.company.companyName = '株式会社グッドライフ';
+    state.company.address = '和歌山市内原876-1';
+  }
   return state;
 }
 
@@ -59,8 +63,8 @@ function loadState(): AppState {
     invoices: [],
     invoiceSeq: 1,
     company: {
-      companyName: '',
-      address: '',
+      companyName: '株式会社グッドライフ',
+      address: '和歌山市内原876-1',
       phone: '',
       fax: '',
       bankInfo: '',

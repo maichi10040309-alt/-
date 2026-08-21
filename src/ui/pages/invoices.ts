@@ -1,12 +1,26 @@
 import { store, newId } from '@/store';
-import type { Client, Invoice, LateAdjustment, TaxCategory } from '@/types';
+import type { Client, CopayRatio, Invoice, LateAdjustment, TaxCategory } from '@/types';
 import { TAX_CATEGORY_LABELS } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
-import { currentYearMonth, formatDateJapanese, formatYmJapanese, isValidYearMonth, todayIso } from '@/utils/date';
+import {
+  currentYearMonth,
+  formatDateJapanese,
+  formatYmJapanese,
+  isValidYearMonth,
+  parseYearMonth,
+  todayIso,
+} from '@/utils/date';
 import { buildInvoiceMonths, cycleStartForMonth, getClientCycles } from '@/utils/billing';
 import { navigate } from '@/ui/router';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { openModal } from '@/ui/components/modal';
+
+const COMPACT_COPAY_LABELS: Record<CopayRatio, string> = {
+  '1': '1割',
+  '2': '2割',
+  '3': '3割',
+  seiho: '生保',
+};
 
 let referenceMonth = currentYearMonth();
 
@@ -377,6 +391,12 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   const client = store.getState().clients.find((c) => c.id === invoice.clientId);
   const company = store.getState().company;
 
+  const issueDateLabel = invoice.issuedDate ? formatDateJapanese(invoice.issuedDate) : formatDateJapanese(todayIso());
+  const ratioLabel = client ? COMPACT_COPAY_LABELS[client.copayRatio] : '';
+
+  const monthRows = invoice.months.map((m) => monthRowHtml(m, ratioLabel)).join('');
+  const adjustmentRows = invoice.adjustments.map(adjustmentRowHtmlForTable).join('');
+
   root.innerHTML = `
     <div class="invoice-actions no-print">
       <button class="btn" id="btn-back">← 一覧に戻る</button>
@@ -392,39 +412,62 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       印刷ボタンで画面が変わらない場合は、キーボードの Ctrl+P(Macは⌘+P)をお試しください。
     </p>
     <div class="invoice-sheet" id="invoice-sheet">
-      <div class="invoice-header">
-        <div>
-          <h2>請求書</h2>
-          <div>${escapeHtml(client?.name ?? '')} 様</div>
-          <div style="color:#64748b;font-size:12px;margin-top:4px">${escapeHtml(client?.address ?? '')}</div>
-        </div>
-        <div class="invoice-meta">
-          <div>請求書番号: ${invoice.invoiceNo ? escapeHtml(invoice.invoiceNo) : '(未発行)'}</div>
-          <div>発行日: ${invoice.issuedDate ? formatDateJapanese(invoice.issuedDate) : '(未発行)'}</div>
-          <div>対象期間: ${formatYmJapanese(invoice.cycleStartMonth)} 〜 ${formatYmJapanese(invoice.cycleEndMonth)}</div>
-          <div style="margin-top:10px;font-weight:600">${escapeHtml(company.companyName)}</div>
-          <div>${escapeHtml(company.address)}</div>
-          <div>${company.phone ? 'TEL: ' + escapeHtml(company.phone) : ''} ${company.fax ? 'FAX: ' + escapeHtml(company.fax) : ''}</div>
+      <h2 class="inv-title">請求書</h2>
+      <div class="inv-header-row">
+        <div class="inv-client-line">${escapeHtml(client?.name ?? '')}<span class="inv-sama">様</span></div>
+        <div class="inv-meta">
+          <div>発行日: ${issueDateLabel}</div>
+          <div style="margin-top:8px">${escapeHtml(company.address)}</div>
+          <div class="inv-company-name">${escapeHtml(company.companyName)}</div>
         </div>
       </div>
+
+      <p class="inv-lead">下記のとおり御請求申し上げます。</p>
 
       <div class="invoice-total-box">
-        <span class="label">ご請求金額(4か月分合計)</span>
+        <span class="label">請求合計金額</span>
         <span class="amount">${formatYen(invoice.totalAmount)}</span>
+        <span class="suffix">（税込）</span>
       </div>
-      <p style="text-align:right;color:var(--color-text-muted);font-size:13px;margin:-20px 0 20px">
-        内訳: 非課税 ${formatYen(invoice.nonTaxableTotal)} ／ 課税 ${formatYen(invoice.taxableTotal)}
-      </p>
 
-      ${invoice.months.map(monthBlockHtml).join('')}
+      <table class="data-table inv-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>負担割合</th>
+            <th class="num">非課税分</th>
+            <th class="num">課税分</th>
+            <th class="num">月別合計金額</th>
+            <th>備考</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${monthRows}
+          ${adjustmentRows}
+          <tr class="inv-total-row">
+            <td>合計</td>
+            <td></td>
+            <td class="num">${formatYen(invoice.nonTaxableTotal)}</td>
+            <td class="num">${formatYen(invoice.taxableTotal)}</td>
+            <td class="num">${formatYen(invoice.totalAmount)}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
 
-      ${invoice.adjustments.length > 0 ? adjustmentsBlockHtml(invoice.adjustments) : ''}
+      <p class="inv-footer">ご不明な点等ございましたら、ご連絡頂きますようお願い致します。</p>
 
       ${
         company.bankInfo
-          ? `<div class="card" style="margin-top:20px"><h3 class="card-title">お振込先</h3><div style="white-space:pre-line">${escapeHtml(company.bankInfo)}</div></div>`
+          ? `<div class="card no-print" style="margin-top:20px"><h3 class="card-title">お振込先(社内メモ・印刷されません)</h3><div style="white-space:pre-line">${escapeHtml(company.bankInfo)}</div></div>`
           : ''
       }
+
+      <details class="inv-detail-toggle no-print">
+        <summary>品目明細を表示(社内確認用・印刷されません)</summary>
+        ${invoice.months.map(monthDetailBlockHtml).join('')}
+        ${invoice.adjustments.length > 0 ? adjustmentsDetailBlockHtml(invoice.adjustments) : ''}
+      </details>
     </div>
   `;
 
@@ -442,7 +485,36 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   });
 }
 
-function adjustmentsBlockHtml(adjustments: Invoice['adjustments']): string {
+function monthRowHtml(month: Invoice['months'][number], ratioLabel: string): string {
+  const { month: monthNumber } = parseYearMonth(month.yearMonth);
+  const itemNames = [...new Set(month.lines.map((l) => l.itemName))].join('、');
+  const hasInsuranceLine = month.lines.length > 0;
+  return `
+    <tr>
+      <td>${monthNumber}月分レンタル料</td>
+      <td>${hasInsuranceLine ? ratioLabel : ''}</td>
+      <td class="num">${formatYen(month.nonTaxableSubtotal)}</td>
+      <td class="num">${formatYen(month.taxableSubtotal)}</td>
+      <td class="num">${formatYen(month.subtotal)}</td>
+      <td>${escapeHtml(itemNames)}</td>
+    </tr>
+  `;
+}
+
+function adjustmentRowHtmlForTable(a: Invoice['adjustments'][number]): string {
+  return `
+    <tr>
+      <td>${formatYmJapanese(a.originalYearMonth)}分(月遅れ)</td>
+      <td></td>
+      <td class="num">${a.taxCategory === 'nontaxable' ? formatYen(a.amount) : formatYen(0)}</td>
+      <td class="num">${a.taxCategory === 'taxable' ? formatYen(a.amount) : formatYen(0)}</td>
+      <td class="num">${formatYen(a.amount)}</td>
+      <td>${escapeHtml(a.reason || a.itemName)}</td>
+    </tr>
+  `;
+}
+
+function adjustmentsDetailBlockHtml(adjustments: Invoice['adjustments']): string {
   const total = adjustments.reduce((sum, a) => sum + a.amount, 0);
   return `
     <div class="invoice-month-block">
@@ -485,7 +557,7 @@ function adjustmentsBlockHtml(adjustments: Invoice['adjustments']): string {
   `;
 }
 
-function monthBlockHtml(month: Invoice['months'][number]): string {
+function monthDetailBlockHtml(month: Invoice['months'][number]): string {
   return `
     <div class="invoice-month-block">
       <h4>${formatYmJapanese(month.yearMonth)}分</h4>
