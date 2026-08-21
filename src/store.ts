@@ -3,12 +3,47 @@ import { DEFAULT_ITEMS } from '@/data/defaultItems';
 
 const STORAGE_KEY = 'care-rental-billing-v1';
 
+/**
+ * taxCategory(非課税/課税)導入より前に保存されたデータには、
+ * UsageEntry / InvoiceMonthLine に taxCategory が存在しない。
+ * 読み込み時に「非課税」として補完し、影響を受ける集計値を再計算する。
+ */
+function migrateState(state: AppState): AppState {
+  for (const entry of state.usageEntries) {
+    if (entry.taxCategory !== 'taxable' && entry.taxCategory !== 'nontaxable') {
+      entry.taxCategory = 'nontaxable';
+    }
+  }
+  for (const invoice of state.invoices) {
+    let nonTaxableTotal = 0;
+    let taxableTotal = 0;
+    for (const month of invoice.months) {
+      let nonTaxableSubtotal = 0;
+      let taxableSubtotal = 0;
+      for (const line of month.lines) {
+        if (line.taxCategory !== 'taxable' && line.taxCategory !== 'nontaxable') {
+          line.taxCategory = 'nontaxable';
+        }
+        if (line.taxCategory === 'taxable') taxableSubtotal += line.amount;
+        else nonTaxableSubtotal += line.amount;
+      }
+      month.nonTaxableSubtotal = nonTaxableSubtotal;
+      month.taxableSubtotal = taxableSubtotal;
+      nonTaxableTotal += nonTaxableSubtotal;
+      taxableTotal += taxableSubtotal;
+    }
+    invoice.nonTaxableTotal = nonTaxableTotal;
+    invoice.taxableTotal = taxableTotal;
+  }
+  return state;
+}
+
 function loadState(): AppState {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as AppState;
-      if (parsed && parsed.version === 1) return parsed;
+      if (parsed && parsed.version === 1) return migrateState(parsed);
     } catch {
       // 破損データは無視して初期化する
     }
