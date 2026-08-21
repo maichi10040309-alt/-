@@ -1,5 +1,6 @@
 import { store, newId } from '@/store';
-import type { Client } from '@/types';
+import type { Client, CopayRatio } from '@/types';
+import { COPAY_RATIO_LABELS } from '@/types';
 import { escapeHtml } from '@/utils/format';
 import { openModal } from '@/ui/components/modal';
 import { currentYearMonth, formatYmJapanese, isValidYearMonth } from '@/utils/date';
@@ -18,6 +19,7 @@ export function renderClientsPage(root: HTMLElement) {
           <tr>
             <th>利用者名</th>
             <th>要介護度</th>
+            <th>負担割合</th>
             <th>担当ケアマネ</th>
             <th>営業担当</th>
             <th>請求起算月</th>
@@ -28,7 +30,7 @@ export function renderClientsPage(root: HTMLElement) {
         <tbody id="client-rows">
           ${
             clients.length === 0
-              ? `<tr class="empty-row"><td colspan="7">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="8">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
               : clients.map(rowHtml).join('')
           }
         </tbody>
@@ -59,6 +61,7 @@ function rowHtml(c: Client): string {
     <tr>
       <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
       <td>${escapeHtml(c.careLevel)}</td>
+      <td>${COPAY_RATIO_LABELS[c.copayRatio]}</td>
       <td>${escapeHtml(c.careManagerName)}</td>
       <td>${escapeHtml(c.salesRepName)}</td>
       <td>${c.billingStartMonth ? formatYmJapanese(c.billingStartMonth) : '-'}</td>
@@ -80,6 +83,7 @@ function openClientModal(existing?: Client) {
     name: '',
     kana: '',
     careLevel: '',
+    copayRatio: '1',
     address: '',
     phone: '',
     careOfficeName: '',
@@ -105,6 +109,17 @@ function openClientModal(existing?: Client) {
       <div class="form-field">
         <label>要介護度</label>
         <input type="text" id="f-careLevel" placeholder="例: 要介護2" value="${escapeHtml(c.careLevel)}" />
+      </div>
+      <div class="form-field">
+        <label>利用者負担割合 *</label>
+        <select id="f-copayRatio">
+          ${(Object.keys(COPAY_RATIO_LABELS) as CopayRatio[])
+            .map(
+              (ratio) =>
+                `<option value="${ratio}" ${ratio === c.copayRatio ? 'selected' : ''}>${COPAY_RATIO_LABELS[ratio]}</option>`
+            )
+            .join('')}
+        </select>
       </div>
       <div class="form-field">
         <label>電話番号</label>
@@ -143,7 +158,8 @@ function openClientModal(existing?: Client) {
       </div>
     </div>
     <p style="color:#64748b;font-size:12px;margin-top:8px">
-      ※ 請求サイクル起算月から4か月ごとに区切って自動集計されます(例: 4月起算なら4〜7月分→8〜11月分→…)。
+      ※ 請求サイクル起算月から4か月ごとに区切って自動集計されます(例: 4月起算なら4〜7月分→8〜11月分→…)。<br />
+      ※ 利用者負担割合は、月次利用入力で介護保険品目(単位数入力)の自己負担額を自動計算する際に使用します。
     </p>
     <div class="form-actions">
       <button class="btn" id="btn-cancel">キャンセル</button>
@@ -169,6 +185,7 @@ function openClientModal(existing?: Client) {
       name,
       kana: (box.querySelector('#f-kana') as HTMLInputElement).value.trim(),
       careLevel: (box.querySelector('#f-careLevel') as HTMLInputElement).value.trim(),
+      copayRatio: (box.querySelector('#f-copayRatio') as HTMLSelectElement).value as CopayRatio,
       phone: (box.querySelector('#f-phone') as HTMLInputElement).value.trim(),
       address: (box.querySelector('#f-address') as HTMLInputElement).value.trim(),
       careOfficeName: (box.querySelector('#f-careOffice') as HTMLInputElement).value.trim(),

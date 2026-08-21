@@ -1,7 +1,9 @@
 import { store, newId } from '@/store';
 import type { UsageEntry } from '@/types';
+import { copayYenPerUnit } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { addMonths, currentYearMonth, formatYmJapanese } from '@/utils/date';
+import { openImportModal } from '@/ui/pages/importExcel';
 
 interface DraftRow {
   itemId: string;
@@ -23,13 +25,17 @@ export function renderUsagePage(root: HTMLElement) {
   }
 
   root.innerHTML = `
-    <div class="page-subtitle" style="margin-bottom:16px">
-      利用者・対象月を選び、レンタル中の品目と金額を入力してください。保存すると4か月ごとの請求に自動反映されます。
+    <div class="toolbar">
+      <div class="page-subtitle" style="margin-bottom:0">
+        利用者・対象月を選び、レンタル中の品目を入力してください。介護保険品目は単位数を入れると
+        利用者負担割合から自己負担額を自動計算します。保存すると4か月ごとの請求に自動反映されます。
+      </div>
+      <button class="btn btn-sm" id="btn-open-import">📥 Excelから一括取り込み</button>
     </div>
     <div class="card">
       ${
         sortedClients.length === 0
-          ? `<p>先に「利用者マスタ」から利用者を登録してください。</p>`
+          ? `<p>先に「利用者マスタ」から利用者を登録するか、「Excelから一括取り込み」をお使いください。</p>`
           : `
         <div class="form-grid" style="margin-bottom:16px">
           <div class="form-field">
@@ -58,17 +64,18 @@ export function renderUsagePage(root: HTMLElement) {
         <table class="data-table usage-table">
           <thead>
             <tr>
-              <th style="width:40%">品目</th>
-              <th class="num" style="width:15%">数量</th>
-              <th class="num" style="width:20%">月額単価</th>
-              <th class="num" style="width:20%">金額</th>
+              <th style="width:34%">品目</th>
+              <th style="width:12%">区分</th>
+              <th class="num" style="width:14%">数量/単位数</th>
+              <th class="num" style="width:16%">単価(円)</th>
+              <th class="num" style="width:16%">金額</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="usage-rows"></tbody>
           <tfoot>
             <tr class="usage-total-row">
-              <td colspan="3">合計</td>
+              <td colspan="4">合計</td>
               <td class="num" id="usage-total">${formatYen(0)}</td>
               <td></td>
             </tr>
@@ -81,6 +88,8 @@ export function renderUsagePage(root: HTMLElement) {
       }
     </div>
   `;
+
+  root.querySelector('#btn-open-import')?.addEventListener('click', () => openImportModal());
 
   if (sortedClients.length === 0) return;
 
@@ -106,7 +115,7 @@ export function renderUsagePage(root: HTMLElement) {
       itemId: firstItem?.id ?? '',
       itemName: firstItem?.name ?? '',
       quantity: 1,
-      unitPrice: firstItem?.unitPrice ?? 0,
+      unitPrice: firstItem ? defaultUnitPriceFor(firstItem) : 0,
     });
     renderRows(items);
   });
@@ -152,6 +161,12 @@ export function renderUsagePage(root: HTMLElement) {
   });
 }
 
+function defaultUnitPriceFor(item: ReturnType<typeof store.getState>['items'][number]): number {
+  if (item.billingType === 'private') return item.unitPrice;
+  const client = store.getState().clients.find((c) => c.id === selectedClientId);
+  return client ? copayYenPerUnit(client.copayRatio) : 0;
+}
+
 function loadDraftFromStore() {
   const existing = store
     .getState()
@@ -169,11 +184,16 @@ function renderRows(items: ReturnType<typeof store.getState>['items']) {
   if (!tbody) return;
 
   if (draftRows.length === 0) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="5">品目が入力されていません。「品目を追加」から入力してください。</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">品目が入力されていません。「品目を追加」から入力してください。</td></tr>`;
   } else {
     tbody.innerHTML = draftRows
-      .map(
-        (row, idx) => `
+      .map((row, idx) => {
+        const item = items.find((i) => i.id === row.itemId);
+        const badge =
+          item?.billingType === 'private'
+            ? '<span class="badge badge-success">自費</span>'
+            : '<span class="badge badge-muted">保険</span>';
+        return `
       <tr data-index="${idx}">
         <td>
           <select class="js-item" data-index="${idx}">
@@ -185,6 +205,7 @@ function renderRows(items: ReturnType<typeof store.getState>['items']) {
               .join('')}
           </select>
         </td>
+        <td>${badge}</td>
         <td class="num">
           <input type="number" class="js-qty" data-index="${idx}" min="0" step="0.5" value="${row.quantity}" />
         </td>
@@ -196,8 +217,8 @@ function renderRows(items: ReturnType<typeof store.getState>['items']) {
           <button class="btn-link js-remove" data-index="${idx}" style="color:#dc2626">削除</button>
         </td>
       </tr>
-    `
-      )
+    `;
+      })
       .join('');
   }
 
@@ -209,7 +230,12 @@ function renderRows(items: ReturnType<typeof store.getState>['items']) {
       const itemId = (e.target as HTMLSelectElement).value;
       const item = items.find((i) => i.id === itemId);
       if (!item) return;
-      draftRows[idx] = { ...draftRows[idx], itemId: item.id, itemName: item.name, unitPrice: item.unitPrice };
+      draftRows[idx] = {
+        ...draftRows[idx],
+        itemId: item.id,
+        itemName: item.name,
+        unitPrice: defaultUnitPriceFor(item),
+      };
       renderRows(items);
     })
   );

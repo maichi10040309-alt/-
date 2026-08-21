@@ -1,14 +1,22 @@
 import { store, newId } from '@/store';
-import type { RentalItem } from '@/types';
+import type { BillingType, RentalItem } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { openModal } from '@/ui/components/modal';
+
+const BILLING_TYPE_LABELS: Record<BillingType, string> = {
+  insurance: '介護保険品目(単位数×負担割合で自動計算)',
+  private: '自費品目(金額を直接入力)',
+};
 
 export function renderItemsPage(root: HTMLElement) {
   const items = [...store.getState().items].sort((a, b) => a.category.localeCompare(b.category, 'ja'));
 
   root.innerHTML = `
     <div class="toolbar">
-      <div class="page-subtitle">レンタル品目と月額単価のマスタです。利用状況の入力時に選択できます。</div>
+      <div class="page-subtitle">
+        レンタル品目のマスタです。介護保険品目は月次利用入力で単位数を入れると利用者負担割合から自動計算され、
+        自費品目は金額をそのまま入力します。
+      </div>
       <button class="btn btn-primary" id="btn-add">＋ 品目を追加</button>
     </div>
     <div class="card">
@@ -17,7 +25,8 @@ export function renderItemsPage(root: HTMLElement) {
           <tr>
             <th>分類</th>
             <th>品目名</th>
-            <th class="num">月額単価</th>
+            <th>区分</th>
+            <th class="num">自費目安月額</th>
             <th>備考</th>
             <th></th>
           </tr>
@@ -25,7 +34,7 @@ export function renderItemsPage(root: HTMLElement) {
         <tbody id="item-rows">
           ${
             items.length === 0
-              ? `<tr class="empty-row"><td colspan="5">品目が登録されていません。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="6">品目が登録されていません。</td></tr>`
               : items.map(rowHtml).join('')
           }
         </tbody>
@@ -56,7 +65,8 @@ function rowHtml(i: RentalItem): string {
     <tr>
       <td>${escapeHtml(i.category)}</td>
       <td>${escapeHtml(i.name)}</td>
-      <td class="num">${formatYen(i.unitPrice)}</td>
+      <td>${i.billingType === 'insurance' ? '<span class="badge badge-muted">保険</span>' : '<span class="badge badge-success">自費</span>'}</td>
+      <td class="num">${i.billingType === 'private' ? formatYen(i.unitPrice) : '-'}</td>
       <td>${escapeHtml(i.note)}</td>
       <td class="actions-cell">
         <button class="btn-link js-edit" data-id="${i.id}">編集</button>
@@ -74,6 +84,7 @@ function openItemModal(existing?: RentalItem) {
     id: newId(),
     name: '',
     category: '',
+    billingType: 'insurance',
     unitPrice: 0,
     note: '',
   };
@@ -90,8 +101,15 @@ function openItemModal(existing?: RentalItem) {
         <label>分類</label>
         <input type="text" id="f-category" value="${escapeHtml(item.category)}" />
       </div>
-      <div class="form-field">
-        <label>月額単価(円) *</label>
+      <div class="form-field full">
+        <label>区分 *</label>
+        <select id="f-billingType">
+          <option value="insurance" ${item.billingType === 'insurance' ? 'selected' : ''}>${BILLING_TYPE_LABELS.insurance}</option>
+          <option value="private" ${item.billingType === 'private' ? 'selected' : ''}>${BILLING_TYPE_LABELS.private}</option>
+        </select>
+      </div>
+      <div class="form-field" id="f-price-field">
+        <label>自費目安月額(円)</label>
         <input type="number" id="f-price" min="0" step="1" value="${item.unitPrice}" />
       </div>
       <div class="form-field full">
@@ -106,23 +124,33 @@ function openItemModal(existing?: RentalItem) {
   `
   );
 
+  const priceField = box.querySelector('#f-price-field') as HTMLElement;
+  const typeSelect = box.querySelector('#f-billingType') as HTMLSelectElement;
+  const syncPriceField = () => {
+    priceField.style.display = typeSelect.value === 'private' ? '' : 'none';
+  };
+  syncPriceField();
+  typeSelect.addEventListener('change', syncPriceField);
+
   box.querySelector('#btn-cancel')?.addEventListener('click', close);
   box.querySelector('#btn-save')?.addEventListener('click', () => {
     const name = (box.querySelector('#f-name') as HTMLInputElement).value.trim();
-    const unitPrice = Number((box.querySelector('#f-price') as HTMLInputElement).value);
+    const billingType = typeSelect.value as BillingType;
+    const unitPrice = Number((box.querySelector('#f-price') as HTMLInputElement).value) || 0;
     if (!name) {
       alert('品目名を入力してください。');
       return;
     }
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-      alert('月額単価を正しく入力してください。');
+    if (billingType === 'private' && unitPrice < 0) {
+      alert('金額を正しく入力してください。');
       return;
     }
     const updated: RentalItem = {
       ...item,
       name,
       category: (box.querySelector('#f-category') as HTMLInputElement).value.trim(),
-      unitPrice,
+      billingType,
+      unitPrice: billingType === 'private' ? unitPrice : 0,
       note: (box.querySelector('#f-note') as HTMLTextAreaElement).value.trim(),
     };
     store.upsertItem(updated);
