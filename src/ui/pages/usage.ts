@@ -1,6 +1,6 @@
 import { store, newId } from '@/store';
-import type { UsageEntry } from '@/types';
-import { copayYenPerUnit } from '@/types';
+import type { TaxCategory, UsageEntry } from '@/types';
+import { TAX_CATEGORY_LABELS, copayYenPerUnit } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { addMonths, currentYearMonth, formatYmJapanese } from '@/utils/date';
 import { openImportModal } from '@/ui/pages/importExcel';
@@ -11,6 +11,7 @@ interface DraftRow {
   itemName: string;
   quantity: number;
   unitPrice: number;
+  taxCategory: TaxCategory;
 }
 
 type Mode = 'input' | 'list';
@@ -218,18 +219,19 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
         <table class="data-table usage-table">
           <thead>
             <tr>
-              <th style="width:34%">品目</th>
-              <th style="width:12%">区分</th>
-              <th class="num" style="width:14%">数量/単位数</th>
-              <th class="num" style="width:16%">単価(円)</th>
-              <th class="num" style="width:16%">金額</th>
+              <th style="width:26%">品目</th>
+              <th style="width:10%">区分</th>
+              <th class="num" style="width:12%">数量/単位数</th>
+              <th class="num" style="width:13%">単価(円)</th>
+              <th style="width:12%">税区分</th>
+              <th class="num" style="width:13%">金額</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="usage-rows"></tbody>
           <tfoot>
             <tr class="usage-total-row">
-              <td colspan="4">合計</td>
+              <td colspan="5">合計(非課税 <span id="usage-total-nontax">${formatYen(0)}</span> ／ 課税 <span id="usage-total-tax">${formatYen(0)}</span>)</td>
               <td class="num" id="usage-total">${formatYen(0)}</td>
               <td></td>
             </tr>
@@ -268,6 +270,7 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
       itemName: firstItem?.name ?? '',
       quantity: 1,
       unitPrice: firstItem ? defaultUnitPriceFor(firstItem) : 0,
+      taxCategory: 'nontaxable',
     });
     renderRows(items);
   });
@@ -289,6 +292,7 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
       itemName: e.itemName,
       quantity: e.quantity,
       unitPrice: e.unitPrice,
+      taxCategory: e.taxCategory,
     }));
     renderRows(items);
   });
@@ -306,6 +310,7 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
         quantity: r.quantity,
         unitPrice: r.unitPrice,
         amount: r.quantity * r.unitPrice,
+        taxCategory: r.taxCategory,
         note: '',
         enteredAt: new Date().toISOString(),
       }));
@@ -328,6 +333,7 @@ function loadDraftFromStore() {
     itemName: e.itemName,
     quantity: e.quantity,
     unitPrice: e.unitPrice,
+    taxCategory: e.taxCategory,
   }));
 }
 
@@ -336,7 +342,7 @@ function renderRows(items: ReturnType<typeof store.getState>['items']) {
   if (!tbody) return;
 
   if (draftRows.length === 0) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">品目が入力されていません。「品目を追加」から入力してください。</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">品目が入力されていません。「品目を追加」から入力してください。</td></tr>`;
   } else {
     tbody.innerHTML = draftRows
       .map((row, idx) => {
@@ -363,6 +369,12 @@ function renderRows(items: ReturnType<typeof store.getState>['items']) {
         </td>
         <td class="num">
           <input type="number" class="js-price" data-index="${idx}" min="0" step="1" value="${row.unitPrice}" />
+        </td>
+        <td>
+          <select class="js-tax" data-index="${idx}">
+            <option value="nontaxable" ${row.taxCategory === 'nontaxable' ? 'selected' : ''}>${TAX_CATEGORY_LABELS.nontaxable}</option>
+            <option value="taxable" ${row.taxCategory === 'taxable' ? 'selected' : ''}>${TAX_CATEGORY_LABELS.taxable}</option>
+          </select>
         </td>
         <td class="num js-amount" data-index="${idx}">${formatYen(row.quantity * row.unitPrice)}</td>
         <td class="actions-cell">
@@ -410,6 +422,14 @@ function renderRows(items: ReturnType<typeof store.getState>['items']) {
     })
   );
 
+  tbody.querySelectorAll('.js-tax').forEach((el) =>
+    el.addEventListener('change', (e) => {
+      const idx = Number((e.target as HTMLSelectElement).dataset.index);
+      draftRows[idx].taxCategory = (e.target as HTMLSelectElement).value as TaxCategory;
+      updateTotal();
+    })
+  );
+
   tbody.querySelectorAll('.js-remove').forEach((el) =>
     el.addEventListener('click', (e) => {
       const idx = Number((e.target as HTMLElement).dataset.index);
@@ -428,7 +448,17 @@ function updateRowAmount(idx: number) {
 
 function updateTotal() {
   const totalEl = document.querySelector('#usage-total');
+  const nonTaxEl = document.querySelector('#usage-total-nontax');
+  const taxEl = document.querySelector('#usage-total-tax');
   if (!totalEl) return;
   const total = draftRows.reduce((sum, r) => sum + r.quantity * r.unitPrice, 0);
+  const nonTaxable = draftRows
+    .filter((r) => r.taxCategory === 'nontaxable')
+    .reduce((sum, r) => sum + r.quantity * r.unitPrice, 0);
+  const taxable = draftRows
+    .filter((r) => r.taxCategory === 'taxable')
+    .reduce((sum, r) => sum + r.quantity * r.unitPrice, 0);
   totalEl.textContent = formatYen(total);
+  if (nonTaxEl) nonTaxEl.textContent = formatYen(nonTaxable);
+  if (taxEl) taxEl.textContent = formatYen(taxable);
 }

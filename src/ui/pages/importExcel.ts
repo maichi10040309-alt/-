@@ -16,6 +16,17 @@ function clientTotal(c: ImportedClient): number {
   return c.lines.reduce((sum, l) => sum + l.quantity * lineUnitPrice(l, c.copayRatio), 0);
 }
 
+function clientTaxBreakdown(c: ImportedClient): { nonTaxable: number; taxable: number } {
+  let nonTaxable = 0;
+  let taxable = 0;
+  for (const l of c.lines) {
+    const amount = l.quantity * lineUnitPrice(l, c.copayRatio);
+    if (l.taxCategory === 'taxable') taxable += amount;
+    else nonTaxable += amount;
+  }
+  return { nonTaxable, taxable };
+}
+
 export function openImportModal() {
   const { box, close } = openModal('Excelから一括取り込み');
 
@@ -88,20 +99,26 @@ export function openImportModal() {
       <div class="table-scroll" style="max-height:280px;overflow-y:auto">
         <table class="data-table">
           <thead>
-            <tr><th>利用者名</th><th>負担割合</th><th>品目数</th><th class="num">金額</th></tr>
+            <tr>
+              <th>利用者名</th><th>負担割合</th><th>品目数</th>
+              <th class="num">非課税</th><th class="num">課税</th><th class="num">金額</th>
+            </tr>
           </thead>
           <tbody>
             ${clients
-              .map(
-                (c) => `
+              .map((c) => {
+                const { nonTaxable, taxable } = clientTaxBreakdown(c);
+                return `
               <tr>
                 <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
                 <td>${COPAY_RATIO_LABELS[c.copayRatio]}</td>
                 <td>${c.lines.length}</td>
+                <td class="num">${formatYen(nonTaxable)}</td>
+                <td class="num">${formatYen(taxable)}</td>
                 <td class="num">${formatYen(clientTotal(c))}</td>
               </tr>
-            `
-              )
+            `;
+              })
               .join('')}
           </tbody>
         </table>
@@ -182,7 +199,6 @@ function commitImport(result: ImportResult, targetMonth: string) {
         careOfficeName: imported.careOfficeName,
         careManagerName: imported.careManagerName,
         salesRepName: '',
-        billingStartMonth: targetMonth,
         active: true,
         note: '',
       };
@@ -215,6 +231,7 @@ function commitImport(result: ImportResult, targetMonth: string) {
         quantity: line.quantity,
         unitPrice,
         amount: line.quantity * unitPrice,
+        taxCategory: line.taxCategory,
         note: '',
         enteredAt: new Date().toISOString(),
       };

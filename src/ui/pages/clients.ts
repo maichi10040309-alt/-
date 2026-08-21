@@ -4,14 +4,13 @@ import { COPAY_RATIO_LABELS } from '@/types';
 import { escapeHtml } from '@/utils/format';
 import { openModal } from '@/ui/components/modal';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
-import { currentYearMonth, formatYmJapanese, isValidYearMonth } from '@/utils/date';
 
 export function renderClientsPage(root: HTMLElement) {
   const clients = [...store.getState().clients].sort((a, b) => a.kana.localeCompare(b.kana, 'ja'));
 
   root.innerHTML = `
     <div class="toolbar">
-      <div class="page-subtitle">利用者(ご契約者)の基本情報と、請求サイクルの起算月を登録します。</div>
+      <div class="page-subtitle">利用者(ご契約者)の基本情報を登録します。請求は全利用者共通で3月・7月・11月に区切って発行されます。</div>
       <button class="btn btn-primary" id="btn-add">＋ 利用者を追加</button>
     </div>
     <div class="card">
@@ -23,7 +22,6 @@ export function renderClientsPage(root: HTMLElement) {
             <th>負担割合</th>
             <th>担当ケアマネ</th>
             <th>営業担当</th>
-            <th>請求起算月</th>
             <th>状態</th>
             <th></th>
           </tr>
@@ -31,7 +29,7 @@ export function renderClientsPage(root: HTMLElement) {
         <tbody id="client-rows">
           ${
             clients.length === 0
-              ? `<tr class="empty-row"><td colspan="8">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="7">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
               : clients.map(rowHtml).join('')
           }
         </tbody>
@@ -68,7 +66,6 @@ function rowHtml(c: Client): string {
       <td>${COPAY_RATIO_LABELS[c.copayRatio]}</td>
       <td>${escapeHtml(c.careManagerName)}</td>
       <td>${escapeHtml(c.salesRepName)}</td>
-      <td>${c.billingStartMonth ? formatYmJapanese(c.billingStartMonth) : '-'}</td>
       <td>${c.active ? '<span class="badge badge-success">利用中</span>' : '<span class="badge badge-muted">終了</span>'}</td>
       <td class="actions-cell">
         <button class="btn-link js-edit" data-id="${c.id}">編集</button>
@@ -93,7 +90,6 @@ function openClientModal(existing?: Client) {
     careOfficeName: '',
     careManagerName: '',
     salesRepName: '',
-    billingStartMonth: currentYearMonth(),
     active: true,
     note: '',
   };
@@ -146,10 +142,6 @@ function openClientModal(existing?: Client) {
         <input type="text" id="f-salesRep" value="${escapeHtml(c.salesRepName)}" />
       </div>
       <div class="form-field">
-        <label>請求サイクル起算月 *</label>
-        <input type="month" id="f-billingStart" value="${c.billingStartMonth}" />
-      </div>
-      <div class="form-field">
         <label>状態</label>
         <select id="f-active">
           <option value="true" ${c.active ? 'selected' : ''}>利用中</option>
@@ -162,7 +154,7 @@ function openClientModal(existing?: Client) {
       </div>
     </div>
     <p style="color:#64748b;font-size:12px;margin-top:8px">
-      ※ 請求サイクル起算月から4か月ごとに区切って自動集計されます(例: 4月起算なら4〜7月分→8〜11月分→…)。<br />
+      ※ 請求サイクルは全利用者共通で、7〜10月分→11月請求、11〜2月分→3月請求、3〜6月分→7月請求です。<br />
       ※ 利用者負担割合は、月次利用入力で介護保険品目(単位数入力)の自己負担額を自動計算する際に使用します。
     </p>
     <div class="form-actions">
@@ -175,13 +167,8 @@ function openClientModal(existing?: Client) {
   box.querySelector('#btn-cancel')?.addEventListener('click', close);
   box.querySelector('#btn-save')?.addEventListener('click', async () => {
     const name = (box.querySelector('#f-name') as HTMLInputElement).value.trim();
-    const billingStartMonth = (box.querySelector('#f-billingStart') as HTMLInputElement).value;
     if (!name) {
       await showAlert('利用者名を入力してください。');
-      return;
-    }
-    if (!isValidYearMonth(billingStartMonth)) {
-      await showAlert('請求サイクル起算月を選択してください。');
       return;
     }
     const updated: Client = {
@@ -195,7 +182,6 @@ function openClientModal(existing?: Client) {
       careOfficeName: (box.querySelector('#f-careOffice') as HTMLInputElement).value.trim(),
       careManagerName: (box.querySelector('#f-careManager') as HTMLInputElement).value.trim(),
       salesRepName: (box.querySelector('#f-salesRep') as HTMLInputElement).value.trim(),
-      billingStartMonth,
       active: (box.querySelector('#f-active') as HTMLSelectElement).value === 'true',
       note: (box.querySelector('#f-note') as HTMLTextAreaElement).value.trim(),
     };

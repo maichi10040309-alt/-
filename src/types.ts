@@ -28,7 +28,6 @@ export interface Client {
   careOfficeName: string; // 居宅介護支援事業所
   careManagerName: string; // 担当ケアマネジャー
   salesRepName: string; // 営業担当者
-  billingStartMonth: YearMonth; // 請求サイクルの起算月(この月から4か月ごとに区切る)
   active: boolean; // 現在レンタル中かどうか
   note: string;
 }
@@ -46,6 +45,15 @@ export interface RentalItem {
   note: string;
 }
 
+// 消費税の課税区分。介護保険の給付限度額を超えた分などは課税になることがあるため
+// 品目マスタではなく実績行ごとに手動で区分する(旧運用のExcelと同じ考え方)。
+export type TaxCategory = 'nontaxable' | 'taxable';
+
+export const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
+  nontaxable: '非課税',
+  taxable: '課税',
+};
+
 export interface UsageEntry {
   id: string;
   clientId: string;
@@ -55,6 +63,7 @@ export interface UsageEntry {
   quantity: number; // 保険品目は単位数、自費品目は通常1
   unitPrice: number; // 保険品目は自己負担額(円/単位)、自費品目は金額(円)そのもの
   amount: number; // 金額(quantity × unitPrice を既定に手動調整可)
+  taxCategory: TaxCategory;
   note: string;
   enteredAt: string; // ISO日時
 }
@@ -66,12 +75,15 @@ export interface InvoiceMonthLine {
   quantity: number;
   unitPrice: number;
   amount: number;
+  taxCategory: TaxCategory;
 }
 
 export interface InvoiceMonth {
   yearMonth: YearMonth;
   lines: InvoiceMonthLine[];
   subtotal: number;
+  nonTaxableSubtotal: number;
+  taxableSubtotal: number;
 }
 
 export interface Invoice {
@@ -82,6 +94,8 @@ export interface Invoice {
   cycleEndMonth: YearMonth;
   months: InvoiceMonth[];
   totalAmount: number;
+  nonTaxableTotal: number;
+  taxableTotal: number;
   status: InvoiceStatus;
   issuedDate: string | null; // "YYYY-MM-DD"
   createdAt: string; // ISO日時

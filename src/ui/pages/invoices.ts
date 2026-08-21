@@ -1,5 +1,6 @@
 import { store, newId } from '@/store';
 import type { Invoice } from '@/types';
+import { TAX_CATEGORY_LABELS } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { currentYearMonth, formatDateJapanese, formatYmJapanese, todayIso } from '@/utils/date';
 import { buildInvoiceMonths, getClientCycles } from '@/utils/billing';
@@ -37,7 +38,10 @@ export function renderInvoicesPage(root: HTMLElement) {
 
   root.innerHTML = `
     <div class="toolbar">
-      <div class="page-subtitle">4か月ごとの請求サイクルを自動集計します。基準月時点で締められたサイクルが「請求対象」に表示されます。</div>
+      <div class="page-subtitle">
+        全利用者共通で3月・7月・11月始まりの4か月サイクルを自動集計します(例: 7〜10月分は11月請求)。
+        基準月が請求月に達したサイクルが「請求対象」に表示されます。
+      </div>
       <div class="toolbar-controls">
         <label>基準月</label>
         <input type="month" id="f-reference" value="${referenceMonth}" />
@@ -118,7 +122,7 @@ export function renderInvoicesPage(root: HTMLElement) {
     const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
     const cycle = cycles.find((c) => c.cycleStartMonth === cycleStartMonth);
     if (!cycle) return;
-    const { months, totalAmount } = buildInvoiceMonths(cycle, usageEntries);
+    const { months, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(cycle, usageEntries);
     const invoice: Invoice = {
       id: newId(),
       invoiceNo: '',
@@ -127,6 +131,8 @@ export function renderInvoicesPage(root: HTMLElement) {
       cycleEndMonth: cycle.cycleEndMonth,
       months,
       totalAmount,
+      nonTaxableTotal,
+      taxableTotal,
       status: 'draft',
       issuedDate: null,
       createdAt: new Date().toISOString(),
@@ -207,6 +213,9 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
         <span class="label">ご請求金額(4か月分合計)</span>
         <span class="amount">${formatYen(invoice.totalAmount)}</span>
       </div>
+      <p style="text-align:right;color:var(--color-text-muted);font-size:13px;margin:-20px 0 20px">
+        内訳: 非課税 ${formatYen(invoice.nonTaxableTotal)} ／ 課税 ${formatYen(invoice.taxableTotal)}
+      </p>
 
       ${invoice.months.map(monthBlockHtml).join('')}
 
@@ -242,13 +251,14 @@ function monthBlockHtml(month: Invoice['months'][number]): string {
             <th>品目</th>
             <th class="num">数量</th>
             <th class="num">月額単価</th>
+            <th>税区分</th>
             <th class="num">金額</th>
           </tr>
         </thead>
         <tbody>
           ${
             month.lines.length === 0
-              ? `<tr class="empty-row"><td colspan="4">利用実績の入力がありません</td></tr>`
+              ? `<tr class="empty-row"><td colspan="5">利用実績の入力がありません</td></tr>`
               : month.lines
                   .map(
                     (l) => `
@@ -256,6 +266,7 @@ function monthBlockHtml(month: Invoice['months'][number]): string {
                 <td>${escapeHtml(l.itemName)}</td>
                 <td class="num">${l.quantity}</td>
                 <td class="num">${formatYen(l.unitPrice)}</td>
+                <td>${TAX_CATEGORY_LABELS[l.taxCategory]}</td>
                 <td class="num">${formatYen(l.amount)}</td>
               </tr>
             `
@@ -263,7 +274,11 @@ function monthBlockHtml(month: Invoice['months'][number]): string {
                   .join('')
           }
           <tr>
-            <td colspan="3" style="text-align:right;font-weight:600">小計</td>
+            <td colspan="4" style="text-align:right;color:var(--color-text-muted)">非課税小計 / 課税小計</td>
+            <td class="num" style="color:var(--color-text-muted)">${formatYen(month.nonTaxableSubtotal)} / ${formatYen(month.taxableSubtotal)}</td>
+          </tr>
+          <tr>
+            <td colspan="4" style="text-align:right;font-weight:600">小計</td>
             <td class="num" style="font-weight:600">${formatYen(month.subtotal)}</td>
           </tr>
         </tbody>
