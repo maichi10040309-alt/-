@@ -2,6 +2,7 @@ import { store, newId } from '@/store';
 import type { BillingType, RentalItem } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { openModal } from '@/ui/components/modal';
+import { showAlert, showConfirm } from '@/ui/components/dialog';
 
 const BILLING_TYPE_LABELS: Record<BillingType, string> = {
   insurance: '介護保険品目(単位数×負担割合で自動計算)',
@@ -44,7 +45,7 @@ export function renderItemsPage(root: HTMLElement) {
 
   root.querySelector('#btn-add')?.addEventListener('click', () => openItemModal());
 
-  root.querySelector('#item-rows')?.addEventListener('click', (e) => {
+  root.querySelector('#item-rows')?.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;
     const id = target.getAttribute('data-id');
     if (!id) return;
@@ -53,7 +54,7 @@ export function renderItemsPage(root: HTMLElement) {
       if (item) openItemModal(item);
     } else if (target.classList.contains('js-delete')) {
       const item = store.getState().items.find((i) => i.id === id);
-      if (item && confirm(`「${item.name}」を削除します。よろしいですか?`)) {
+      if (item && (await showConfirm(`「${item.name}」を削除します。よろしいですか?`))) {
         store.deleteItem(id);
       }
     }
@@ -133,16 +134,16 @@ function openItemModal(existing?: RentalItem) {
   typeSelect.addEventListener('change', syncPriceField);
 
   box.querySelector('#btn-cancel')?.addEventListener('click', close);
-  box.querySelector('#btn-save')?.addEventListener('click', () => {
+  box.querySelector('#btn-save')?.addEventListener('click', async () => {
     const name = (box.querySelector('#f-name') as HTMLInputElement).value.trim();
     const billingType = typeSelect.value as BillingType;
     const unitPrice = Number((box.querySelector('#f-price') as HTMLInputElement).value) || 0;
     if (!name) {
-      alert('品目名を入力してください。');
+      await showAlert('品目名を入力してください。');
       return;
     }
     if (billingType === 'private' && unitPrice < 0) {
-      alert('金額を正しく入力してください。');
+      await showAlert('金額を正しく入力してください。');
       return;
     }
     const updated: RentalItem = {

@@ -2,6 +2,7 @@ import { store, newId } from '@/store';
 import type { Client, CopayRatio, RentalItem, UsageEntry } from '@/types';
 import { COPAY_RATIO_LABELS, copayYenPerUnit } from '@/types';
 import { openModal } from '@/ui/components/modal';
+import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { currentYearMonth, formatYmJapanese, isValidYearMonth } from '@/utils/date';
 import type { ImportedClient, ImportResult } from '@/utils/excelImport';
@@ -118,30 +119,27 @@ export function openImportModal() {
   monthInput.addEventListener('change', updateMonthLabel);
 
   box.querySelector('#btn-cancel')?.addEventListener('click', close);
-  commitBtn.addEventListener('click', () => {
+  commitBtn.addEventListener('click', async () => {
     if (!parsed) {
-      alert('先にファイルを選択し、解析が完了してから取り込んでください。');
+      await showAlert('先にファイルを選択し、解析が完了してから取り込んでください。');
       return;
     }
     if (parsed.clients.length === 0) {
-      alert('取り込めるデータが見つかりませんでした。ファイルの内容をご確認ください。');
+      await showAlert('取り込めるデータが見つかりませんでした。ファイルの内容をご確認ください。');
       return;
     }
     if (!isValidYearMonth(monthInput.value)) {
-      alert('対象年月を選択してください。');
+      await showAlert('対象年月を選択してください。');
       return;
     }
     const targetMonth = monthInput.value;
-    if (
-      !confirm(
-        `${parsed.clients.length}名の利用者について、${formatYmJapanese(targetMonth)}分の利用状況を取り込みます。よろしいですか?\n(既に入力済みの場合は上書きされます)`
-      )
-    ) {
-      return;
-    }
+    const ok = await showConfirm(
+      `${parsed.clients.length}名の利用者について、${formatYmJapanese(targetMonth)}分の利用状況を取り込みます。よろしいですか?\n(既に入力済みの場合は上書きされます)`
+    );
+    if (!ok) return;
     commitImport(parsed, targetMonth);
     close();
-    alert('取り込みが完了しました。「利用者マスタ」「月次利用入力」で内容をご確認ください。');
+    await showAlert('取り込みが完了しました。「利用者マスタ」「月次利用入力」で内容をご確認ください。');
   });
 }
 

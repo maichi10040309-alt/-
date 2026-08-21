@@ -4,6 +4,7 @@ import { escapeHtml, formatYen } from '@/utils/format';
 import { currentYearMonth, formatDateJapanese, formatYmJapanese, todayIso } from '@/utils/date';
 import { buildInvoiceMonths, getClientCycles } from '@/utils/billing';
 import { navigate } from '@/ui/router';
+import { showConfirm } from '@/ui/components/dialog';
 
 let referenceMonth = currentYearMonth();
 
@@ -182,6 +183,9 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       }
       <button class="btn" id="btn-print">🖨 印刷</button>
     </div>
+    <p class="no-print" style="color:var(--color-text-muted);font-size:12px;margin:-10px 0 16px;text-align:right">
+      印刷ボタンで画面が変わらない場合は、キーボードの Ctrl+P(Macは⌘+P)をお試しください。
+    </p>
     <div class="invoice-sheet" id="invoice-sheet">
       <div class="invoice-header">
         <div>
@@ -216,8 +220,8 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
 
   root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
   root.querySelector('#btn-print')?.addEventListener('click', () => window.print());
-  root.querySelector('#btn-issue')?.addEventListener('click', () => {
-    if (!confirm('この請求書を発行済みにします。よろしいですか?')) return;
+  root.querySelector('#btn-issue')?.addEventListener('click', async () => {
+    if (!(await showConfirm('この請求書を発行済みにします。よろしいですか?'))) return;
     const invoiceNo = invoice.invoiceNo || store.nextInvoiceNo();
     store.saveInvoice({
       ...invoice,

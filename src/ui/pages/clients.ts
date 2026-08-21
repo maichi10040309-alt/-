@@ -3,6 +3,7 @@ import type { Client, CopayRatio } from '@/types';
 import { COPAY_RATIO_LABELS } from '@/types';
 import { escapeHtml } from '@/utils/format';
 import { openModal } from '@/ui/components/modal';
+import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { currentYearMonth, formatYmJapanese, isValidYearMonth } from '@/utils/date';
 
 export function renderClientsPage(root: HTMLElement) {
@@ -40,7 +41,7 @@ export function renderClientsPage(root: HTMLElement) {
 
   root.querySelector('#btn-add')?.addEventListener('click', () => openClientModal());
 
-  root.querySelector('#client-rows')?.addEventListener('click', (e) => {
+  root.querySelector('#client-rows')?.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;
     const id = target.getAttribute('data-id');
     if (!id) return;
@@ -49,7 +50,10 @@ export function renderClientsPage(root: HTMLElement) {
       if (client) openClientModal(client);
     } else if (target.classList.contains('js-delete')) {
       const client = store.getState().clients.find((c) => c.id === id);
-      if (client && confirm(`「${client.name}」を削除します。関連する利用実績・請求書も削除されます。よろしいですか?`)) {
+      if (
+        client &&
+        (await showConfirm(`「${client.name}」を削除します。関連する利用実績・請求書も削除されます。よろしいですか?`))
+      ) {
         store.deleteClient(id);
       }
     }
@@ -169,15 +173,15 @@ function openClientModal(existing?: Client) {
   );
 
   box.querySelector('#btn-cancel')?.addEventListener('click', close);
-  box.querySelector('#btn-save')?.addEventListener('click', () => {
+  box.querySelector('#btn-save')?.addEventListener('click', async () => {
     const name = (box.querySelector('#f-name') as HTMLInputElement).value.trim();
     const billingStartMonth = (box.querySelector('#f-billingStart') as HTMLInputElement).value;
     if (!name) {
-      alert('利用者名を入力してください。');
+      await showAlert('利用者名を入力してください。');
       return;
     }
     if (!isValidYearMonth(billingStartMonth)) {
-      alert('請求サイクル起算月を選択してください。');
+      await showAlert('請求サイクル起算月を選択してください。');
       return;
     }
     const updated: Client = {

@@ -4,6 +4,7 @@ import { copayYenPerUnit } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { addMonths, currentYearMonth, formatYmJapanese } from '@/utils/date';
 import { openImportModal } from '@/ui/pages/importExcel';
+import { showAlert, showConfirm } from '@/ui/components/dialog';
 
 interface DraftRow {
   itemId: string;
@@ -120,16 +121,16 @@ export function renderUsagePage(root: HTMLElement) {
     renderRows(items);
   });
 
-  root.querySelector('#btn-copy-prev')?.addEventListener('click', () => {
+  root.querySelector('#btn-copy-prev')?.addEventListener('click', async () => {
     const prevMonth = addMonths(selectedMonth, -1);
     const prevEntries = store
       .getState()
       .usageEntries.filter((u) => u.clientId === selectedClientId && u.yearMonth === prevMonth);
     if (prevEntries.length === 0) {
-      alert(`${formatYmJapanese(prevMonth)}の入力データが見つかりません。`);
+      await showAlert(`${formatYmJapanese(prevMonth)}の入力データが見つかりません。`);
       return;
     }
-    if (draftRows.length > 0 && !confirm('現在入力中の内容を前月の内容で置き換えます。よろしいですか?')) {
+    if (draftRows.length > 0 && !(await showConfirm('現在入力中の内容を前月の内容で置き換えます。よろしいですか?'))) {
       return;
     }
     draftRows = prevEntries.map((e) => ({
