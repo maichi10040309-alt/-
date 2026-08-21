@@ -1,302 +1,84 @@
-// ============================================================
-// 共通型定義。詳細な設計意図は DESIGN.md を参照。
-// ============================================================
+// "YYYY-MM" 形式の年月文字列
+export type YearMonth = string;
 
-export type TimeOfDay = 'morning' | 'noon' | 'night';
-
-export const TIME_ORDER: TimeOfDay[] = ['morning', 'noon', 'night'];
-
-export type ShopType = 'sweets' | 'bookstore';
-
-export interface ShopDef {
+export interface Client {
   id: string;
-  name: string;
-  type: ShopType;
-  characterId: string;
-  floor: number;
+  name: string; // 利用者名
+  kana: string; // フリガナ
+  careLevel: string; // 要介護度(自由入力: 要支援1〜要介護5 など)
+  address: string;
+  phone: string;
+  careOfficeName: string; // 居宅介護支援事業所
+  careManagerName: string; // 担当ケアマネジャー
+  salesRepName: string; // 営業担当者
+  billingStartMonth: YearMonth; // 請求サイクルの起算月(この月から4か月ごとに区切る)
+  active: boolean; // 現在レンタル中かどうか
+  note: string;
 }
 
-export interface CharacterDef {
+export interface RentalItem {
   id: string;
-  name: string;
-  shopId: string;
-  personality: string;
-  favoriteMaterialId: string;
-  color: string;
-  portrait: string;
-  // 店内でキャラクターに近づいた(タッチした)ときの第一声
-  greetings: [string, string, string, string, string];
-  // 「話しかける」ボタンを押したときの一言(greetingsとは別内容)
-  talkLines: [string, string, string, string, string];
+  name: string; // 品目名(例: 特殊寝台、車椅子)
+  category: string; // 分類
+  unitPrice: number; // 月額単価(円)
+  note: string;
 }
 
-export type MaterialCategory = 'grain' | 'dairy' | 'fruit' | 'sweetener' | 'flavor' | 'rare';
-export type Rarity = 'common' | 'uncommon' | 'rare';
-
-export interface MaterialDef {
+export interface UsageEntry {
   id: string;
-  name: string;
-  category: MaterialCategory;
-  rarity: Rarity;
-  buyPrice: number | null;
-  soldAtShopId: string | null;
-  color: string;
+  clientId: string;
+  yearMonth: YearMonth; // 利用月
+  itemId: string;
+  itemName: string; // 入力時点の品目名スナップショット
+  quantity: number; // 数量(通常1、複数貸与時などに使用)
+  unitPrice: number; // 入力時点の単価スナップショット(日割り等で調整可)
+  amount: number; // 金額(quantity × unitPrice を既定に手動調整可)
+  note: string;
+  enteredAt: string; // ISO日時
 }
 
-export type RecipeCategory = 'cake' | 'cookie' | 'chocolate' | 'candy' | 'pastry';
+export type InvoiceStatus = 'draft' | 'issued';
 
-export interface RecipeDef {
+export interface InvoiceMonthLine {
+  itemName: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface InvoiceMonth {
+  yearMonth: YearMonth;
+  lines: InvoiceMonthLine[];
+  subtotal: number;
+}
+
+export interface Invoice {
   id: string;
-  name: string;
-  category: RecipeCategory;
-  ingredients: { materialId: string; qty: number }[];
-  baseSuccessRate: number;
-  basePrice: number;
-  difficulty: number;
-  initiallyKnown: boolean;
+  invoiceNo: string; // 請求書番号
+  clientId: string;
+  cycleStartMonth: YearMonth;
+  cycleEndMonth: YearMonth;
+  months: InvoiceMonth[];
+  totalAmount: number;
+  status: InvoiceStatus;
+  issuedDate: string | null; // "YYYY-MM-DD"
+  createdAt: string; // ISO日時
 }
 
-export type EventTemplateId = 'consultation' | 'minigame';
-
-export interface EventTemplateDef {
-  id: EventTemplateId;
-  title: string;
-  description: string;
+export interface CompanySettings {
+  companyName: string;
+  address: string;
+  phone: string;
+  fax: string;
+  bankInfo: string; // 振込先情報
 }
 
-export interface EventRewardDef {
-  characterId: string;
-  affinityLevel: number; // 2-5
-  templateId: EventTemplateId;
-  rewardMaterialId?: string;
-  rewardRecipeId?: string;
-  rewardMoney: number;
-}
-
-export interface ContestStageDef {
-  stage: number;
-  name: string;
-  requiredRankIndex: number;
-  entryFee: number;
-  rewardMoney: number;
-  rewardMaterialId?: string;
-  rewardRecipeId?: string;
-}
-
-// ------------------------------------------------------------
-// プレイヤー / ゲーム進行状態
-// ------------------------------------------------------------
-
-export interface AffinityState {
-  points: number;
-  level: number; // 1-5
-  completedEventLevels: number[]; // クリア済みイベントの affinityLevel 一覧
-  pendingEventLevel: number | null; // 発生可能だが未消化のイベント
-}
-
-export interface RecipeMasteryState {
-  timesMade: number;
-  rankIndex: number;
-}
-
-export interface InventoryEntry {
-  materialId: string;
-  qty: number;
-}
-
-export interface ShelfItem {
-  id: string; // 一意なインスタンスID
-  recipeId: string;
-  rankIndex: number;
-  price: number;
-}
-
-export interface MonthlyRecord {
-  monthNumber: number;
-  playerSales: number;
-  rivalSales: number;
-  targetSales: number;
-  result: 'win' | 'lose' | 'pending';
-}
-
-// ------------------------------------------------------------
-// お客さんタイプ(接客シミュレーション用。GameStateへは保存しない一時データ)
-// ------------------------------------------------------------
-
-export type CustomerTypeId = 'child' | 'student' | 'family' | 'gourmet' | 'celebrity';
-
-export interface CustomerTypeDef {
-  id: CustomerTypeId;
-  name: string;
-  icon: string;
-  weight: number; // 出現ウェイト(合計は100である必要はない)
-  baseBudget: number;
-  budgetVariance: number;
-  preferredCategories: RecipeCategory[];
-  categoryBonus: number;
-  preferredMinRankIndex?: number; // このランク以上を好む
-  preferredRankBonus?: number;
-  lowRankPenaltyThreshold?: number; // このランク以下は敬遠される
-  lowRankPenalty?: number;
-  recommendationMultiplier: number; // 「本日のおすすめ」ボーナスへの反応の強さ
-  priceSensitivity: number; // 適正価格からの乖離にどれだけ敏感か
-  // 予算超過(予算〜予算1.2倍)ゾーンでのペナルティを弱める倍率。省略時は1(標準)。
-  budgetPenaltyFactor?: number;
-}
-
-export interface CustomerVisitResult {
-  customerTypeId: CustomerTypeId;
-  customerName: string;
-  customerIcon: string;
-  budget: number;
-  purchased: boolean;
-  purchasedItemName?: string;
-  purchasedItemRank?: string;
-  purchasedPrice?: number;
-  reason?: string;
-}
-
-export interface SalesShiftResult {
-  customers: number;
-  itemsSold: number;
-  revenue: number;
-  customerBreakdown: Partial<Record<CustomerTypeId, number>>;
-  visits: CustomerVisitResult[];
-}
-
-export interface ContestRecord {
-  stage: number;
-  cleared: boolean;
-}
-
-// ------------------------------------------------------------
-// 店舗設備アップグレード
-// ------------------------------------------------------------
-
-export type ShopUpgradeId = 'display' | 'oven' | 'register' | 'interior';
-export type ShopUpgradeLevel = 1 | 2 | 3 | 4;
-
-export interface ShopUpgradeState {
-  display: ShopUpgradeLevel;
-  oven: ShopUpgradeLevel;
-  register: ShopUpgradeLevel;
-  interior: ShopUpgradeLevel;
-}
-
-// 設備ごとに異なる効果値を型安全に保持するための判別共用体(idと必ず対応する)
-export type ShopUpgradeEffect =
-  | { kind: 'display'; shelfCapacity: number }
-  | { kind: 'oven'; successRateBonus: number }
-  | { kind: 'register'; baseCustomers: number }
-  | { kind: 'interior'; customerWeightBonuses: Partial<Record<CustomerTypeId, number>> };
-
-export interface ShopUpgradeLevelDef {
-  level: ShopUpgradeLevel;
-  name: string;
-  description: string;
-  cost: number; // レベル1は0(強化費用なし)
-  effect: ShopUpgradeEffect;
-}
-
-export interface ShopUpgradeDef {
-  id: ShopUpgradeId;
-  name: string;
-  icon: string;
-  description: string;
-  levels: ShopUpgradeLevelDef[]; // インデックス0がレベル1
-}
-
-// ------------------------------------------------------------
-// ストロベリー店の店内レイヤー合成(背景+設備+装飾を重ねて表示する)
-// ------------------------------------------------------------
-
-export type StrawberryShopLayerId = 'background' | 'display' | 'register' | 'oven' | 'decor';
-
-export interface ShopLayerPlacement {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  // 0〜1の正規化アンカー。省略時は(0.5, 1)=下端中央(接地基準点)。
-  // 現状の描画(drawImageFitBottom)は常に下端中央アンカーを用いるため、
-  // 将来アンカーを変える設備が出た場合の拡張用に残している。
-  anchorX?: number;
-  anchorY?: number;
-  zIndex: number;
-}
-
-export interface ShopLayerAsset {
-  id: string;
-  image: string; // base64データURI。空文字/未登録時はアイコンへフォールバックする
-  placement: ShopLayerPlacement;
-  visible: boolean;
-}
-
-// ------------------------------------------------------------
-// 設備レイヤーの見た目補正(位置の微調整・拡大・背景となじませる色調・接地影)。
-// ゲームロジック(設備レベルの効果値等)とは無関係の、純粋な表示調整専用の型。
-// ------------------------------------------------------------
-
-export interface ShopLayerShadowAdjustment {
-  offsetX: number;
-  offsetY: number;
-  blur: number;
-  alpha: number; // 0〜1
-}
-
-export interface ShopLayerVisualAdjustment {
-  brightness: number; // ctx.filter の brightness()
-  saturate: number; // ctx.filter の saturate()
-  contrast: number; // ctx.filter の contrast()
-  opacity: number; // ctx.globalAlpha
-  offsetX: number; // 配置スペースの接地基準点からの水平方向オフセット(px)
-  offsetY: number; // 配置スペースの接地基準点からの垂直方向オフセット(px)
-  scale: number; // 配置スペースを接地基準点固定で拡大縮小する倍率
-  shadow: ShopLayerShadowAdjustment;
-}
-
-// レベルごとの微調整(透明余白や外形差の吸収用)。オフセットは加算、スケールは乗算で
-// ベースのShopLayerVisualAdjustmentへ重ねる。現時点では全レベル恒等値で構わない。
-export interface ShopLayerLevelAdjustment {
-  offsetX: number;
-  offsetY: number;
-  scale: number;
-}
-
-// 装飾(トロフィー・季節装飾・写真など)の所持状態。取得・編集システムは今回未実装で、
-// レイヤー表示へ後から差し込めるようにするための型のみ用意している。
-export interface OwnedShopDecoration {
-  id: string;
-  placementId: string;
-  visible: boolean;
-}
-
-export interface LogEntry {
-  id: number;
-  day: number;
-  timeOfDay: TimeOfDay;
-  text: string;
-}
-
-export interface GameState {
-  version: number;
-  day: number;
-  timeOfDay: TimeOfDay;
-  money: number;
-  inventory: InventoryEntry[];
-  knownRecipeIds: string[];
-  recipeMastery: Record<string, RecipeMasteryState>;
-  characterAffinity: Record<string, AffinityState>;
-  shelf: ShelfItem[];
-  monthlyRecords: MonthlyRecord[];
-  currentMonthPlayerSales: number;
-  currentMonthRivalSales: number;
-  contestStageCleared: number; // 直近までクリアした段階数(0=未挑戦)
-  endingSeen: boolean;
-  researchCount: number;
-  actionsThisSlot: number; // このタイムスロット内で行った「時間を消費する行動」の回数
-  logs: LogEntry[];
-  logSeq: number;
-  todaysRecommendationRecipeId: string; // 本日のおすすめ(日替わりで抽選)
-  shopUpgrades: ShopUpgradeState; // 店舗設備(陳列棚/オーブン/レジ/店舗内装)のレベル
+export interface AppState {
+  version: 1;
+  clients: Client[];
+  items: RentalItem[];
+  usageEntries: UsageEntry[];
+  invoices: Invoice[];
+  invoiceSeq: number;
+  company: CompanySettings;
 }
