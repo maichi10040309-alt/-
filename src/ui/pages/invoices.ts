@@ -394,7 +394,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   const issueDateLabel = invoice.issuedDate ? formatDateJapanese(invoice.issuedDate) : formatDateJapanese(todayIso());
   const ratioLabel = client ? COMPACT_COPAY_LABELS[client.copayRatio] : '';
 
-  const monthRows = invoice.months.map((m) => monthRowHtml(m, ratioLabel)).join('');
+  const monthRows = invoice.months.map((m, idx) => monthRowHtml(m, idx, ratioLabel)).join('');
   const adjustmentRows = invoice.adjustments.map(adjustmentRowHtmlForTable).join('');
 
   root.innerHTML = `
@@ -483,11 +483,21 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       issuedDate: todayIso(),
     });
   });
+
+  root.querySelectorAll('.js-month-note').forEach((el) =>
+    el.addEventListener('change', (e) => {
+      const idx = Number((e.target as HTMLInputElement).dataset.index);
+      const value = (e.target as HTMLInputElement).value;
+      const current = store.getState().invoices.find((i) => i.id === invoiceId);
+      if (!current) return;
+      const months = current.months.map((m, i) => (i === idx ? { ...m, note: value } : m));
+      store.saveInvoice({ ...current, months });
+    })
+  );
 }
 
-function monthRowHtml(month: Invoice['months'][number], ratioLabel: string): string {
+function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel: string): string {
   const { month: monthNumber } = parseYearMonth(month.yearMonth);
-  const itemNames = [...new Set(month.lines.map((l) => l.itemName))].join('、');
   const hasInsuranceLine = month.lines.length > 0;
   return `
     <tr>
@@ -496,7 +506,9 @@ function monthRowHtml(month: Invoice['months'][number], ratioLabel: string): str
       <td class="num">${formatYen(month.nonTaxableSubtotal)}</td>
       <td class="num">${formatYen(month.taxableSubtotal)}</td>
       <td class="num">${formatYen(month.subtotal)}</td>
-      <td>${escapeHtml(itemNames)}</td>
+      <td>
+        <input type="text" class="js-month-note inv-note-input" data-index="${idx}" value="${escapeHtml(month.note)}" />
+      </td>
     </tr>
   `;
 }

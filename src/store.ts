@@ -29,6 +29,7 @@ function migrateState(state: AppState): AppState {
       }
       month.nonTaxableSubtotal = nonTaxableSubtotal;
       month.taxableSubtotal = taxableSubtotal;
+      if (typeof month.note !== 'string') month.note = '';
       nonTaxableTotal += nonTaxableSubtotal;
       taxableTotal += taxableSubtotal;
     }

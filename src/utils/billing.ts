@@ -111,7 +111,7 @@ export function buildInvoiceMonths(
     const taxableSubtotal = lines
       .filter((l) => l.taxCategory === 'taxable')
       .reduce((sum, l) => sum + l.amount, 0);
-    return { yearMonth: ym, lines, subtotal, nonTaxableSubtotal, taxableSubtotal };
+    return { yearMonth: ym, lines, subtotal, nonTaxableSubtotal, taxableSubtotal, note: '' };
   });
 
   const adjustments: Invoice['adjustments'] = lateAdjustments

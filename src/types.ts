@@ -84,6 +84,7 @@ export interface InvoiceMonth {
   subtotal: number;
   nonTaxableSubtotal: number;
   taxableSubtotal: number;
+  note: string; // 請求書に印字する備考(自由入力、既定は空欄)
 }
 
 export interface InvoiceAdjustmentLine {

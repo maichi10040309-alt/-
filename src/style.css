@@ -623,6 +623,23 @@ table.data-table {
   margin-top: 28px;
 }
 
+.inv-note-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.inv-note-input:hover,
+.inv-note-input:focus {
+  border-bottom-color: var(--color-border);
+  outline: none;
+}
+
 .invoice-month-block {
   margin-bottom: 18px;
 }
