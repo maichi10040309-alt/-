@@ -35,6 +35,7 @@ export function renderInvoicesPage(root: HTMLElement) {
   }[] = [];
 
   for (const client of clients) {
+    if (client.paymentMethod === 'cash') continue; // 都度現金の方は自動請求対象に含めない
     const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
     for (const cycle of cycles) {
       if (cycle.isDue && !cycle.invoice) {
@@ -91,6 +92,38 @@ export function renderInvoicesPage(root: HTMLElement) {
                   )
                   .join('')
           }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">早期請求(途中解約・都度現金など)</h3>
+      <p class="page-subtitle" style="margin:0 0 12px">
+        4か月そろう前に請求したい場合(途中解約など)や、都度現金の方の請求書を作りたい場合はここから作成できます。
+      </p>
+      <div class="form-grid" style="grid-template-columns:280px;margin-bottom:12px">
+        <div class="form-field">
+          <label>利用者</label>
+          <select id="f-early-client">
+            <option value="">選択してください</option>
+            ${[...clients]
+              .sort((a, b) => a.kana.localeCompare(b.kana, 'ja'))
+              .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${c.paymentMethod === 'cash' ? '(都度現金)' : ''}</option>`)
+              .join('')}
+          </select>
+        </div>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>対象期間</th>
+            <th class="num">現在の金額</th>
+            <th>状態</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="early-cycle-rows">
+          <tr class="empty-row"><td colspan="4">利用者を選択してください。</td></tr>
         </tbody>
       </table>
     </div>
@@ -161,14 +194,10 @@ export function renderInvoicesPage(root: HTMLElement) {
     }
   });
 
-  root.querySelector('#due-rows')?.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.js-create') as HTMLElement | null;
-    if (!btn) return;
-    const clientId = btn.dataset.client!;
-    const cycleStartMonth = btn.dataset.cycle!;
+  function createInvoiceForCycle(clientId: string, cycleStartMonth: string, farReference: string) {
     const client = clients.find((c) => c.id === clientId);
     if (!client) return;
-    const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
+    const cycles = getClientCycles(client, usageEntries, invoices, farReference);
     const cycle = cycles.find((c) => c.cycleStartMonth === cycleStartMonth);
     if (!cycle) return;
     const { months, adjustments, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(
@@ -193,6 +222,59 @@ export function renderInvoicesPage(root: HTMLElement) {
     };
     store.saveInvoice(invoice);
     navigate(`invoices/${invoice.id}`);
+  }
+
+  root.querySelector('#due-rows')?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('.js-create') as HTMLElement | null;
+    if (!btn) return;
+    createInvoiceForCycle(btn.dataset.client!, btn.dataset.cycle!, referenceMonth);
+  });
+
+  const earlyClientSelect = root.querySelector('#f-early-client') as HTMLSelectElement;
+  const earlyCycleRows = root.querySelector('#early-cycle-rows') as HTMLElement;
+  const todayMonth = currentYearMonth();
+
+  function renderEarlyCycleRows() {
+    const clientId = earlyClientSelect.value;
+    if (!clientId) {
+      earlyCycleRows.innerHTML = `<tr class="empty-row"><td colspan="4">利用者を選択してください。</td></tr>`;
+      return;
+    }
+    const client = clients.find((c) => c.id === clientId);
+    if (!client) return;
+    // 今日時点までの実績があるサイクルのみ対象(未来の空サイクルは表示しない)
+    const cycles = getClientCycles(client, usageEntries, invoices, todayMonth).filter((c) => !c.invoice);
+    if (cycles.length === 0) {
+      earlyCycleRows.innerHTML = `<tr class="empty-row"><td colspan="4">未請求のサイクルはありません。先に「月次利用入力」で利用状況を入力してください。</td></tr>`;
+      return;
+    }
+    earlyCycleRows.innerHTML = cycles
+      .map((cycle) => {
+        const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments);
+        const statusBadge = cycle.isDue
+          ? '<span class="badge badge-warning">締め済み(通常の請求対象)</span>'
+          : '<span class="badge badge-muted">進行中(早期請求)</span>';
+        return `
+          <tr>
+            <td>${formatYmJapanese(cycle.cycleStartMonth)} 〜 ${formatYmJapanese(cycle.cycleEndMonth)}</td>
+            <td class="num">${formatYen(preview.totalAmount)}</td>
+            <td>${statusBadge}</td>
+            <td class="actions-cell">
+              <button class="btn btn-sm btn-primary js-create-early" data-cycle="${cycle.cycleStartMonth}">この期間で請求書を作成</button>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+  }
+
+  earlyClientSelect?.addEventListener('change', renderEarlyCycleRows);
+  earlyCycleRows?.addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest('.js-create-early') as HTMLElement | null;
+    if (!btn) return;
+    const cycleStartMonth = btn.dataset.cycle!;
+    if (!(await showConfirm('この期間で請求書を作成します。よろしいですか?'))) return;
+    createInvoiceForCycle(earlyClientSelect.value, cycleStartMonth, todayMonth);
   });
 
   root.querySelector('#invoice-rows')?.addEventListener('click', (e) => {
@@ -497,6 +579,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
 }
 
 function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel: string): string {
+  if (month.lines.length === 0) return ''; // 利用実績のない月は行を出さない(途中解約等で4か月そろわない場合に対応)
   const { month: monthNumber } = parseYearMonth(month.yearMonth);
   const hasInsuranceLine = month.lines.length > 0;
   return `

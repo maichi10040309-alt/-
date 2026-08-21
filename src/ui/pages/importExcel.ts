@@ -194,6 +194,7 @@ function commitImport(result: ImportResult, targetMonth: string) {
         kana: imported.kana,
         careLevel: imported.careLevel,
         copayRatio: imported.copayRatio,
+        paymentMethod: 'cycle',
         address: '',
         phone: '',
         careOfficeName: imported.careOfficeName,

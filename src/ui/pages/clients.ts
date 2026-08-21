@@ -1,6 +1,6 @@
 import { store, newId } from '@/store';
-import type { Client, ClientEvent, ClientEventType, CopayRatio } from '@/types';
-import { CLIENT_EVENT_TYPE_LABELS, COPAY_RATIO_LABELS } from '@/types';
+import type { Client, ClientEvent, ClientEventType, CopayRatio, PaymentMethod } from '@/types';
+import { CLIENT_EVENT_TYPE_LABELS, COPAY_RATIO_LABELS, PAYMENT_METHOD_LABELS } from '@/types';
 import { escapeHtml } from '@/utils/format';
 import { openModal } from '@/ui/components/modal';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
@@ -54,6 +54,7 @@ function renderListSection(section: HTMLElement) {
             <th>利用者名</th>
             <th>要介護度</th>
             <th>負担割合</th>
+            <th>請求方法</th>
             <th>担当ケアマネ</th>
             <th>営業担当</th>
             <th>状態</th>
@@ -63,7 +64,7 @@ function renderListSection(section: HTMLElement) {
         <tbody id="client-rows">
           ${
             clients.length === 0
-              ? `<tr class="empty-row"><td colspan="7">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="8">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
               : clients.map(rowHtml).join('')
           }
         </tbody>
@@ -98,6 +99,7 @@ function rowHtml(c: Client): string {
       <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
       <td>${escapeHtml(c.careLevel)}</td>
       <td>${COPAY_RATIO_LABELS[c.copayRatio]}</td>
+      <td>${c.paymentMethod === 'cash' ? '<span class="badge badge-muted">都度現金</span>' : '4か月ごと'}</td>
       <td>${escapeHtml(c.careManagerName)}</td>
       <td>${escapeHtml(c.salesRepName)}</td>
       <td>${c.active ? '<span class="badge badge-success">利用中</span>' : '<span class="badge badge-muted">終了</span>'}</td>
@@ -119,6 +121,7 @@ function openClientModal(existing?: Client) {
     kana: '',
     careLevel: '',
     copayRatio: '1',
+    paymentMethod: 'cycle',
     address: '',
     phone: '',
     careOfficeName: '',
@@ -151,6 +154,17 @@ function openClientModal(existing?: Client) {
             .map(
               (ratio) =>
                 `<option value="${ratio}" ${ratio === c.copayRatio ? 'selected' : ''}>${COPAY_RATIO_LABELS[ratio]}</option>`
+            )
+            .join('')}
+        </select>
+      </div>
+      <div class="form-field">
+        <label>請求方法 *</label>
+        <select id="f-paymentMethod">
+          ${(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[])
+            .map(
+              (m) =>
+                `<option value="${m}" ${m === c.paymentMethod ? 'selected' : ''}>${PAYMENT_METHOD_LABELS[m]}</option>`
             )
             .join('')}
         </select>
@@ -190,6 +204,8 @@ function openClientModal(existing?: Client) {
     <p style="color:#64748b;font-size:12px;margin-top:8px">
       ※ 請求サイクルは全利用者共通で、7〜10月分→11月請求、11〜2月分→3月請求、3〜6月分→7月請求です。<br />
       ※ 利用者負担割合は、月次利用入力で介護保険品目(単位数入力)の自己負担額を自動計算する際に使用します。<br />
+      ※「都度現金」の方は、4か月ごとの「請求対象」に自動では表示されません(「請求書」画面から手動で作成することは可能です)。<br />
+      ※ 途中解約などで4か月そろう前に請求したい場合は、「請求書」画面の「早期請求」から作成できます。<br />
       ※ 新規・変更・終了・休止などの経緯は「変更履歴」タブに記録できます。
     </p>
     <div class="form-actions">
@@ -212,6 +228,7 @@ function openClientModal(existing?: Client) {
       kana: (box.querySelector('#f-kana') as HTMLInputElement).value.trim(),
       careLevel: (box.querySelector('#f-careLevel') as HTMLInputElement).value.trim(),
       copayRatio: (box.querySelector('#f-copayRatio') as HTMLSelectElement).value as CopayRatio,
+      paymentMethod: (box.querySelector('#f-paymentMethod') as HTMLSelectElement).value as PaymentMethod,
       phone: (box.querySelector('#f-phone') as HTMLInputElement).value.trim(),
       address: (box.querySelector('#f-address') as HTMLInputElement).value.trim(),
       careOfficeName: (box.querySelector('#f-careOffice') as HTMLInputElement).value.trim(),

@@ -17,12 +17,22 @@ export function copayYenPerUnit(ratio: CopayRatio): number {
   return Number(ratio);
 }
 
+// 'cycle' = 4か月ごとにまとめて請求書を発行(通常運用)
+// 'cash'  = 都度現金入金のため、4か月ごとの自動請求対象には含めない
+export type PaymentMethod = 'cycle' | 'cash';
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cycle: '4か月ごと請求',
+  cash: '都度現金',
+};
+
 export interface Client {
   id: string;
   name: string; // 利用者名
   kana: string; // フリガナ
   careLevel: string; // 要介護度(自由入力: 要支援1〜要介護5 など)
   copayRatio: CopayRatio; // 利用者負担割合(介護保険品目の自己負担計算に使用)
+  paymentMethod: PaymentMethod;
   address: string;
   phone: string;
   careOfficeName: string; // 居宅介護支援事業所

@@ -9,6 +9,11 @@ const STORAGE_KEY = 'care-rental-billing-v1';
  * 読み込み時に「非課税」として補完し、影響を受ける集計値を再計算する。
  */
 function migrateState(state: AppState): AppState {
+  for (const client of state.clients) {
+    if (client.paymentMethod !== 'cash' && client.paymentMethod !== 'cycle') {
+      client.paymentMethod = 'cycle';
+    }
+  }
   for (const entry of state.usageEntries) {
     if (entry.taxCategory !== 'taxable' && entry.taxCategory !== 'nontaxable') {
       entry.taxCategory = 'nontaxable';
