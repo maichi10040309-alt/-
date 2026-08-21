@@ -87,12 +87,19 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
         <table class="data-table">
           <thead>
             <tr>
-              <th>利用者名</th>
-              <th>状態</th>
-              <th>入力状況</th>
+              <th rowspan="2" style="vertical-align:bottom">利用者名</th>
+              <th rowspan="2" style="vertical-align:bottom">状態</th>
+              <th rowspan="2" style="vertical-align:bottom">入力状況</th>
+              <th colspan="2" style="text-align:center">介護保険品目</th>
+              <th colspan="2" style="text-align:center">自費品目</th>
+              <th rowspan="2" class="num" style="vertical-align:bottom">合計金額</th>
+              <th rowspan="2"></th>
+            </tr>
+            <tr>
               <th class="num">品目数</th>
-              <th class="num">合計金額</th>
-              <th></th>
+              <th class="num">自己負担額</th>
+              <th class="num">品目数</th>
+              <th class="num">金額</th>
             </tr>
           </thead>
           <tbody id="list-rows"></tbody>
@@ -118,24 +125,38 @@ function renderListRows(
   if (!tbody) return;
 
   if (clients.length === 0) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">利用者が登録されていません。</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="9">利用者が登録されていません。</td></tr>`;
     return;
   }
 
+  const items = store.getState().items;
+  const billingTypeOf = (itemId: string) => items.find((i) => i.id === itemId)?.billingType ?? 'insurance';
+
   let grandTotal = 0;
+  let insuranceGrandTotal = 0;
+  let privateGrandTotal = 0;
   let enteredCount = 0;
 
   const rows = clients.map((c) => {
     const entries = usageEntries.filter((u) => u.clientId === c.id && u.yearMonth === selectedMonth);
-    const total = entries.reduce((sum, e) => sum + e.amount, 0);
+    const insuranceEntries = entries.filter((e) => billingTypeOf(e.itemId) === 'insurance');
+    const privateEntries = entries.filter((e) => billingTypeOf(e.itemId) === 'private');
+    const insuranceTotal = insuranceEntries.reduce((sum, e) => sum + e.amount, 0);
+    const privateTotal = privateEntries.reduce((sum, e) => sum + e.amount, 0);
+    const total = insuranceTotal + privateTotal;
     grandTotal += total;
+    insuranceGrandTotal += insuranceTotal;
+    privateGrandTotal += privateTotal;
     if (entries.length > 0) enteredCount++;
     return `
       <tr>
         <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
         <td>${c.active ? '<span class="badge badge-success">利用中</span>' : '<span class="badge badge-muted">終了</span>'}</td>
         <td>${entries.length > 0 ? '<span class="badge badge-success">入力済み</span>' : '<span class="badge badge-warning">未入力</span>'}</td>
-        <td class="num">${entries.length}</td>
+        <td class="num">${insuranceEntries.length}</td>
+        <td class="num">${formatYen(insuranceTotal)}</td>
+        <td class="num">${privateEntries.length}</td>
+        <td class="num">${formatYen(privateTotal)}</td>
         <td class="num">${formatYen(total)}</td>
         <td class="actions-cell"><button class="btn-link js-edit-client" data-id="${c.id}">入力へ</button></td>
       </tr>
@@ -147,7 +168,8 @@ function renderListRows(
   const summary = document.querySelector('#list-summary');
   if (summary) {
     summary.innerHTML = `${formatYmJapanese(selectedMonth)}: <strong>${enteredCount} / ${clients.length}名</strong> 入力済み、
-      合計 <strong>${formatYen(grandTotal)}</strong>`;
+      合計 <strong>${formatYen(grandTotal)}</strong>
+      (介護保険品目 ${formatYen(insuranceGrandTotal)} ／ 自費品目 ${formatYen(privateGrandTotal)})`;
   }
 
   tbody.querySelectorAll('.js-edit-client').forEach((el) =>
