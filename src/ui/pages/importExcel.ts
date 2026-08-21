@@ -38,7 +38,7 @@ export function openImportModal() {
     <div id="import-status" style="margin-top:16px"></div>
     <div class="form-actions">
       <button class="btn" id="btn-cancel">閉じる</button>
-      <button class="btn btn-primary" id="btn-commit" disabled>この内容を取り込む</button>
+      <button class="btn btn-primary" id="btn-commit">この内容を取り込む</button>
     </div>
   `
   );
@@ -48,13 +48,16 @@ export function openImportModal() {
   const monthInput = box.querySelector('#f-target-month') as HTMLInputElement;
   const commitBtn = box.querySelector('#btn-commit') as HTMLButtonElement;
 
+  // 取り込みボタンは常にクリック可能にしておき、準備ができていない場合は
+  // クリック時にメッセージで案内する(disabled属性の更新漏れ・環境差異による
+  // 「押せているように見えるが反応しない」状態を避けるため)。
   let parsed: ImportResult | null = null;
 
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files?.[0];
     if (!file) return;
+    parsed = null;
     statusEl.innerHTML = `<p style="color:#64748b">解析中…</p>`;
-    commitBtn.disabled = true;
     try {
       const buffer = await readFileAsArrayBuffer(file);
       parsed = parseCareExcelWorkbook(buffer);
@@ -104,7 +107,6 @@ export function openImportModal() {
       </div>
     `;
     updateMonthLabel();
-    commitBtn.disabled = clients.length === 0;
   }
 
   function updateMonthLabel() {
@@ -117,7 +119,14 @@ export function openImportModal() {
 
   box.querySelector('#btn-cancel')?.addEventListener('click', close);
   commitBtn.addEventListener('click', () => {
-    if (!parsed || parsed.clients.length === 0) return;
+    if (!parsed) {
+      alert('先にファイルを選択し、解析が完了してから取り込んでください。');
+      return;
+    }
+    if (parsed.clients.length === 0) {
+      alert('取り込めるデータが見つかりませんでした。ファイルの内容をご確認ください。');
+      return;
+    }
     if (!isValidYearMonth(monthInput.value)) {
       alert('対象年月を選択してください。');
       return;

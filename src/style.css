@@ -277,6 +277,11 @@ body {
   background: var(--color-surface-hover);
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .btn:focus-visible,
 a:focus-visible,
 input:focus-visible,
