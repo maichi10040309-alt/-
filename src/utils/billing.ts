@@ -1,4 +1,4 @@
-import type { Client, Invoice, LateAdjustment, UsageEntry, YearMonth } from '@/types';
+import type { BillingType, Client, Invoice, LateAdjustment, RentalItem, UsageEntry, YearMonth } from '@/types';
 import { addMonths, parseYearMonth, ymCompare } from '@/utils/date';
 
 export const CYCLE_LENGTH = 4; // 請求は4か月ごと
@@ -28,7 +28,12 @@ export interface BillingCycle {
   months: YearMonth[]; // cycle内の4か月
   /** サイクルの最終月が基準月を過ぎていて請求可能かどうか(=請求月に到達したか) */
   isDue: boolean;
-  invoice: Invoice | null; // 既に発行/下書き済みの請求書があれば
+  /** 保険分の請求書(既に発行/下書き済みのものがあれば) */
+  insuranceInvoice: Invoice | null;
+  /** 自費分の請求書(既に発行/下書き済みのものがあれば) */
+  privateInvoice: Invoice | null;
+  /** この機能追加より前に作成された、保険・自費合算の旧形式請求書があれば(あれば両区分とも請求済み扱い) */
+  combinedInvoice: Invoice | null;
 }
 
 /**
@@ -69,8 +74,12 @@ export function getClientCycles(
     for (let i = 0; i < CYCLE_LENGTH; i++) months.push(addMonths(cycleStart, i));
     const cycleEndMonth = months[months.length - 1];
 
-    const invoice =
-      clientInvoices.find((inv) => inv.cycleStartMonth === cycleStart) ?? null;
+    const insuranceInvoice =
+      clientInvoices.find((inv) => inv.cycleStartMonth === cycleStart && inv.billingCategory === 'insurance') ?? null;
+    const privateInvoice =
+      clientInvoices.find((inv) => inv.cycleStartMonth === cycleStart && inv.billingCategory === 'private') ?? null;
+    const combinedInvoice =
+      clientInvoices.find((inv) => inv.cycleStartMonth === cycleStart && inv.billingCategory === 'combined') ?? null;
 
     cycles.push({
       clientId: client.id,
@@ -79,7 +88,9 @@ export function getClientCycles(
       months,
       // 請求は締め月の翌月に行う(例: 7〜10月分は11月に請求)
       isDue: ymCompare(cycleEndMonth, referenceMonth) < 0,
-      invoice,
+      insuranceInvoice,
+      privateInvoice,
+      combinedInvoice,
     });
 
     cycleStart = addMonths(cycleStart, CYCLE_LENGTH);
@@ -88,14 +99,23 @@ export function getClientCycles(
   return cycles;
 }
 
+/**
+ * 保険分/自費分のどちらか一方の区分のみを対象に、請求書に印字する月別内訳を組み立てる。
+ * 品目マスタが削除されていて区分が判別できない実績行は、保険分として扱う。
+ */
 export function buildInvoiceMonths(
   cycle: BillingCycle,
   usageEntries: UsageEntry[],
-  lateAdjustments: LateAdjustment[] = []
+  lateAdjustments: LateAdjustment[],
+  items: RentalItem[],
+  category: BillingType
 ): Pick<Invoice, 'months' | 'adjustments' | 'totalAmount' | 'nonTaxableTotal' | 'taxableTotal'> {
+  const itemBillingTypeById = new Map(items.map((i) => [i.id, i.billingType]));
+  const entryCategory = (itemId: string): BillingType => itemBillingTypeById.get(itemId) ?? 'insurance';
+
   const months: Invoice['months'] = cycle.months.map((ym) => {
     const entries = usageEntries.filter(
-      (u) => u.clientId === cycle.clientId && u.yearMonth === ym
+      (u) => u.clientId === cycle.clientId && u.yearMonth === ym && entryCategory(u.itemId) === category
     );
     const lines = entries.map((e) => ({
       itemName: e.itemName,
@@ -116,7 +136,10 @@ export function buildInvoiceMonths(
 
   const adjustments: Invoice['adjustments'] = lateAdjustments
     .filter(
-      (a) => a.clientId === cycle.clientId && cycleStartForMonth(a.billedYearMonth) === cycle.cycleStartMonth
+      (a) =>
+        a.clientId === cycle.clientId &&
+        cycleStartForMonth(a.billedYearMonth) === cycle.cycleStartMonth &&
+        a.billingType === category
     )
     .map((a) => ({
       originalYearMonth: a.originalYearMonth,

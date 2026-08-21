@@ -80,6 +80,16 @@ export interface UsageEntry {
 
 export type InvoiceStatus = 'draft' | 'issued';
 
+// 請求書の区分。保険分/自費分をそれぞれ別の請求書として発行する。
+// 'combined' はこの機能追加より前に作成された、保険・自費が1枚にまとまった旧形式の請求書。
+export type InvoiceBillingCategory = BillingType | 'combined';
+
+export const INVOICE_BILLING_CATEGORY_LABELS: Record<InvoiceBillingCategory, string> = {
+  insurance: '保険分',
+  private: '自費分',
+  combined: '保険・自費合算(旧)',
+};
+
 export interface InvoiceMonthLine {
   itemName: string;
   quantity: number;
@@ -118,6 +128,7 @@ export interface Invoice {
   totalAmount: number;
   nonTaxableTotal: number;
   taxableTotal: number;
+  billingCategory: InvoiceBillingCategory;
   status: InvoiceStatus;
   issuedDate: string | null; // "YYYY-MM-DD"
   createdAt: string; // ISO日時
@@ -156,6 +167,7 @@ export interface LateAdjustment {
   originalYearMonth: YearMonth; // 本来の提供月
   billedYearMonth: YearMonth; // この月を含む請求サイクルの請求書に計上する
   reason: string; // 理由(例: 暫定利用による月遅れ請求、返戻等による再請求、過誤による返金 など)
+  billingType: BillingType; // 保険分/自費分どちらの請求書に計上するか
   itemName: string;
   quantity: number;
   unitPrice: number;

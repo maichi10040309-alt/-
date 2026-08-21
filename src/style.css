@@ -542,6 +542,14 @@ table.data-table {
   text-indent: 0.3em; /* letter-spacingで右に寄る分を視覚的に相殺 */
 }
 
+.inv-category-badge {
+  display: block;
+  font-size: 13px;
+  letter-spacing: normal;
+  color: var(--color-text-muted);
+  margin-top: 6px;
+}
+
 .inv-header-row {
   display: flex;
   justify-content: space-between;

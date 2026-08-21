@@ -41,9 +41,24 @@ function migrateState(state: AppState): AppState {
     invoice.nonTaxableTotal = nonTaxableTotal;
     invoice.taxableTotal = taxableTotal;
     if (!invoice.adjustments) invoice.adjustments = [];
+    // 区分未設定の請求書(保険/自費の分割請求より前に作成されたもの)は、
+    // 保険・自費が1枚に混在した旧形式として扱う。
+    if (
+      invoice.billingCategory !== 'insurance' &&
+      invoice.billingCategory !== 'private' &&
+      invoice.billingCategory !== 'combined'
+    ) {
+      invoice.billingCategory = 'combined';
+    }
   }
   if (!state.clientEvents) state.clientEvents = [];
   if (!state.lateAdjustments) state.lateAdjustments = [];
+  const itemBillingTypeByName = new Map(state.items.map((i) => [i.name, i.billingType]));
+  for (const adjustment of state.lateAdjustments) {
+    if (adjustment.billingType !== 'insurance' && adjustment.billingType !== 'private') {
+      adjustment.billingType = itemBillingTypeByName.get(adjustment.itemName) ?? 'insurance';
+    }
+  }
   if (!state.company.companyName && !state.company.address) {
     state.company.companyName = '株式会社グッドライフ';
     state.company.address = '和歌山市内原876-1';

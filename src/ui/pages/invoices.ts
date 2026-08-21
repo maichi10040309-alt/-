@@ -1,6 +1,6 @@
 import { store, newId } from '@/store';
-import type { Client, CopayRatio, Invoice, LateAdjustment, TaxCategory } from '@/types';
-import { TAX_CATEGORY_LABELS } from '@/types';
+import type { BillingType, Client, CopayRatio, Invoice, LateAdjustment, TaxCategory } from '@/types';
+import { INVOICE_BILLING_CATEGORY_LABELS, TAX_CATEGORY_LABELS } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import {
   currentYearMonth,
@@ -10,7 +10,7 @@ import {
   parseYearMonth,
   todayIso,
 } from '@/utils/date';
-import { buildInvoiceMonths, cycleStartForMonth, getClientCycles } from '@/utils/billing';
+import { buildInvoiceMonths, cycleStartForMonth, getClientCycles, type BillingCycle } from '@/utils/billing';
 import { navigate } from '@/ui/router';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { openModal } from '@/ui/components/modal';
@@ -22,28 +22,49 @@ const COMPACT_COPAY_LABELS: Record<CopayRatio, string> = {
   seiho: '生保',
 };
 
+const BILLING_TYPE_LABELS: Record<BillingType, string> = {
+  insurance: '保険',
+  private: '自費',
+};
+
 let referenceMonth = currentYearMonth();
 
+/** そのサイクルの指定区分(保険/自費)に、請求すべき実績(利用実績 or 月遅れ調整)があるかどうか */
+function cycleCategoryHasData(cycle: BillingCycle, category: BillingType): boolean {
+  const { usageEntries, lateAdjustments, items } = store.getState();
+  const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments, items, category);
+  return preview.months.some((m) => m.lines.length > 0) || preview.adjustments.length > 0;
+}
+
+function categoryInvoiceOf(cycle: BillingCycle, category: BillingType): Invoice | null {
+  return category === 'insurance' ? cycle.insuranceInvoice : cycle.privateInvoice;
+}
+
 export function renderInvoicesPage(root: HTMLElement) {
-  const { clients, usageEntries, invoices, lateAdjustments } = store.getState();
+  const { clients, usageEntries, invoices, lateAdjustments, items } = store.getState();
 
   const dueRows: {
     clientId: string;
     clientName: string;
     cycleStartMonth: string;
     cycleEndMonth: string;
+    category: BillingType;
   }[] = [];
 
   for (const client of clients) {
     if (client.paymentMethod === 'cash') continue; // 都度現金の方は自動請求対象に含めない
     const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
     for (const cycle of cycles) {
-      if (cycle.isDue && !cycle.invoice) {
+      if (!cycle.isDue || cycle.combinedInvoice) continue;
+      for (const category of ['insurance', 'private'] as const) {
+        if (categoryInvoiceOf(cycle, category)) continue;
+        if (!cycleCategoryHasData(cycle, category)) continue;
         dueRows.push({
           clientId: client.id,
           clientName: client.name,
           cycleStartMonth: cycle.cycleStartMonth,
           cycleEndMonth: cycle.cycleEndMonth,
+          category,
         });
       }
     }
@@ -56,7 +77,7 @@ export function renderInvoicesPage(root: HTMLElement) {
     <div class="toolbar">
       <div class="page-subtitle">
         全利用者共通で3月・7月・11月始まりの4か月サイクルを自動集計します(例: 7〜10月分は11月請求)。
-        基準月が請求月に達したサイクルが「請求対象」に表示されます。
+        基準月が請求月に達したサイクルが「請求対象」に表示されます。保険分・自費分は別々の請求書として作成されます。
       </div>
       <div class="toolbar-controls">
         <label>基準月</label>
@@ -70,6 +91,7 @@ export function renderInvoicesPage(root: HTMLElement) {
         <thead>
           <tr>
             <th>利用者</th>
+            <th>区分</th>
             <th>請求対象期間</th>
             <th></th>
           </tr>
@@ -77,15 +99,16 @@ export function renderInvoicesPage(root: HTMLElement) {
         <tbody id="due-rows">
           ${
             dueRows.length === 0
-              ? `<tr class="empty-row"><td colspan="3">基準月時点で新たに請求すべきサイクルはありません。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="4">基準月時点で新たに請求すべきサイクルはありません。</td></tr>`
               : dueRows
                   .map(
                     (r) => `
               <tr>
                 <td>${escapeHtml(r.clientName)}</td>
+                <td>${BILLING_TYPE_LABELS[r.category]}</td>
                 <td>${formatYmJapanese(r.cycleStartMonth)} 〜 ${formatYmJapanese(r.cycleEndMonth)}</td>
                 <td class="actions-cell">
-                  <button class="btn btn-sm btn-primary js-create" data-client="${r.clientId}" data-cycle="${r.cycleStartMonth}">請求書を作成</button>
+                  <button class="btn btn-sm btn-primary js-create" data-client="${r.clientId}" data-cycle="${r.cycleStartMonth}" data-category="${r.category}">請求書を作成</button>
                 </td>
               </tr>
             `
@@ -117,13 +140,14 @@ export function renderInvoicesPage(root: HTMLElement) {
         <thead>
           <tr>
             <th>対象期間</th>
+            <th>区分</th>
             <th class="num">現在の金額</th>
             <th>状態</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="early-cycle-rows">
-          <tr class="empty-row"><td colspan="4">利用者を選択してください。</td></tr>
+          <tr class="empty-row"><td colspan="5">利用者を選択してください。</td></tr>
         </tbody>
       </table>
     </div>
@@ -140,6 +164,7 @@ export function renderInvoicesPage(root: HTMLElement) {
         <thead>
           <tr>
             <th>利用者</th>
+            <th>区分</th>
             <th>本来の提供月</th>
             <th>計上する請求月</th>
             <th>理由</th>
@@ -152,7 +177,7 @@ export function renderInvoicesPage(root: HTMLElement) {
         <tbody id="adjustment-rows">
           ${
             lateAdjustments.length === 0
-              ? `<tr class="empty-row"><td colspan="8">調整はまだありません。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="9">調整はまだありません。</td></tr>`
               : [...lateAdjustments]
                   .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                   .map((a) => adjustmentRowHtml(a, clients, invoices))
@@ -169,6 +194,7 @@ export function renderInvoicesPage(root: HTMLElement) {
           <tr>
             <th>請求書番号</th>
             <th>利用者</th>
+            <th>区分</th>
             <th>対象期間</th>
             <th class="num">請求金額</th>
             <th>状態</th>
@@ -178,7 +204,7 @@ export function renderInvoicesPage(root: HTMLElement) {
         <tbody id="invoice-rows">
           ${
             sortedInvoices.length === 0
-              ? `<tr class="empty-row"><td colspan="6">請求書はまだ作成されていません。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="7">請求書はまだ作成されていません。</td></tr>`
               : sortedInvoices.map(invoiceRowHtml).join('')
           }
         </tbody>
@@ -194,7 +220,12 @@ export function renderInvoicesPage(root: HTMLElement) {
     }
   });
 
-  function createInvoiceForCycle(clientId: string, cycleStartMonth: string, farReference: string) {
+  function createInvoiceForCycle(
+    clientId: string,
+    cycleStartMonth: string,
+    farReference: string,
+    category: BillingType
+  ) {
     const client = clients.find((c) => c.id === clientId);
     if (!client) return;
     const cycles = getClientCycles(client, usageEntries, invoices, farReference);
@@ -203,7 +234,9 @@ export function renderInvoicesPage(root: HTMLElement) {
     const { months, adjustments, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(
       cycle,
       usageEntries,
-      lateAdjustments
+      lateAdjustments,
+      items,
+      category
     );
     const invoice: Invoice = {
       id: newId(),
@@ -216,6 +249,7 @@ export function renderInvoicesPage(root: HTMLElement) {
       totalAmount,
       nonTaxableTotal,
       taxableTotal,
+      billingCategory: category,
       status: 'draft',
       issuedDate: null,
       createdAt: new Date().toISOString(),
@@ -227,7 +261,12 @@ export function renderInvoicesPage(root: HTMLElement) {
   root.querySelector('#due-rows')?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('.js-create') as HTMLElement | null;
     if (!btn) return;
-    createInvoiceForCycle(btn.dataset.client!, btn.dataset.cycle!, referenceMonth);
+    createInvoiceForCycle(
+      btn.dataset.client!,
+      btn.dataset.cycle!,
+      referenceMonth,
+      btn.dataset.category as BillingType
+    );
   });
 
   const earlyClientSelect = root.querySelector('#f-early-client') as HTMLSelectElement;
@@ -237,30 +276,40 @@ export function renderInvoicesPage(root: HTMLElement) {
   function renderEarlyCycleRows() {
     const clientId = earlyClientSelect.value;
     if (!clientId) {
-      earlyCycleRows.innerHTML = `<tr class="empty-row"><td colspan="4">利用者を選択してください。</td></tr>`;
+      earlyCycleRows.innerHTML = `<tr class="empty-row"><td colspan="5">利用者を選択してください。</td></tr>`;
       return;
     }
     const client = clients.find((c) => c.id === clientId);
     if (!client) return;
     // 今日時点までの実績があるサイクルのみ対象(未来の空サイクルは表示しない)
-    const cycles = getClientCycles(client, usageEntries, invoices, todayMonth).filter((c) => !c.invoice);
-    if (cycles.length === 0) {
-      earlyCycleRows.innerHTML = `<tr class="empty-row"><td colspan="4">未請求のサイクルはありません。先に「月次利用入力」で利用状況を入力してください。</td></tr>`;
+    const cycles = getClientCycles(client, usageEntries, invoices, todayMonth).filter((c) => !c.combinedInvoice);
+    type Row = { cycle: BillingCycle; category: BillingType };
+    const rows: Row[] = [];
+    for (const cycle of cycles) {
+      for (const category of ['insurance', 'private'] as const) {
+        if (categoryInvoiceOf(cycle, category)) continue;
+        if (!cycleCategoryHasData(cycle, category)) continue;
+        rows.push({ cycle, category });
+      }
+    }
+    if (rows.length === 0) {
+      earlyCycleRows.innerHTML = `<tr class="empty-row"><td colspan="5">未請求のサイクルはありません。先に「月次利用入力」で利用状況を入力してください。</td></tr>`;
       return;
     }
-    earlyCycleRows.innerHTML = cycles
-      .map((cycle) => {
-        const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments);
+    earlyCycleRows.innerHTML = rows
+      .map(({ cycle, category }) => {
+        const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments, items, category);
         const statusBadge = cycle.isDue
           ? '<span class="badge badge-warning">締め済み(通常の請求対象)</span>'
           : '<span class="badge badge-muted">進行中(早期請求)</span>';
         return `
           <tr>
             <td>${formatYmJapanese(cycle.cycleStartMonth)} 〜 ${formatYmJapanese(cycle.cycleEndMonth)}</td>
+            <td>${BILLING_TYPE_LABELS[category]}</td>
             <td class="num">${formatYen(preview.totalAmount)}</td>
             <td>${statusBadge}</td>
             <td class="actions-cell">
-              <button class="btn btn-sm btn-primary js-create-early" data-cycle="${cycle.cycleStartMonth}">この期間で請求書を作成</button>
+              <button class="btn btn-sm btn-primary js-create-early" data-cycle="${cycle.cycleStartMonth}" data-category="${category}">この期間で請求書を作成</button>
             </td>
           </tr>
         `;
@@ -273,8 +322,9 @@ export function renderInvoicesPage(root: HTMLElement) {
     const btn = (e.target as HTMLElement).closest('.js-create-early') as HTMLElement | null;
     if (!btn) return;
     const cycleStartMonth = btn.dataset.cycle!;
-    if (!(await showConfirm('この期間で請求書を作成します。よろしいですか?'))) return;
-    createInvoiceForCycle(earlyClientSelect.value, cycleStartMonth, todayMonth);
+    const category = btn.dataset.category as BillingType;
+    if (!(await showConfirm(`${BILLING_TYPE_LABELS[category]}分の請求書をこの期間で作成します。よろしいですか?`))) return;
+    createInvoiceForCycle(earlyClientSelect.value, cycleStartMonth, todayMonth, category);
   });
 
   root.querySelector('#invoice-rows')?.addEventListener('click', (e) => {
@@ -306,10 +356,16 @@ export function renderInvoicesPage(root: HTMLElement) {
 function adjustmentRowHtml(a: LateAdjustment, clients: Client[], invoices: Invoice[]): string {
   const client = clients.find((c) => c.id === a.clientId);
   const cycleStart = cycleStartForMonth(a.billedYearMonth);
-  const alreadyInvoiced = invoices.some((inv) => inv.clientId === a.clientId && inv.cycleStartMonth === cycleStart);
+  const alreadyInvoiced = invoices.some(
+    (inv) =>
+      inv.clientId === a.clientId &&
+      inv.cycleStartMonth === cycleStart &&
+      (inv.billingCategory === a.billingType || inv.billingCategory === 'combined')
+  );
   return `
     <tr>
       <td>${escapeHtml(client?.name ?? '(削除済み)')}</td>
+      <td>${BILLING_TYPE_LABELS[a.billingType]}</td>
       <td>${formatYmJapanese(a.originalYearMonth)}</td>
       <td>${formatYmJapanese(a.billedYearMonth)}</td>
       <td>${escapeHtml(a.reason)}</td>
@@ -334,6 +390,7 @@ function openAdjustmentModal(clients: Client[], existing?: LateAdjustment) {
     originalYearMonth: currentYearMonth(),
     billedYearMonth: currentYearMonth(),
     reason: '暫定利用による月遅れ請求',
+    billingType: 'insurance',
     itemName: '',
     quantity: 1,
     unitPrice: 0,
@@ -351,6 +408,13 @@ function openAdjustmentModal(clients: Client[], existing?: LateAdjustment) {
         <label>利用者 *</label>
         <select id="f-client">
           ${clients.map((c) => `<option value="${c.id}" ${c.id === a.clientId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-field">
+        <label>区分 *</label>
+        <select id="f-billing-type">
+          <option value="insurance" ${a.billingType === 'insurance' ? 'selected' : ''}>保険分</option>
+          <option value="private" ${a.billingType === 'private' ? 'selected' : ''}>自費分</option>
         </select>
       </div>
       <div class="form-field">
@@ -394,7 +458,7 @@ function openAdjustmentModal(clients: Client[], existing?: LateAdjustment) {
       </div>
     </div>
     <p style="color:var(--color-text-muted);font-size:12px;margin-top:8px">
-      ※ 金額欄は数量×単価で自動計算されますが、直接書き換えることもできます。
+      ※ 金額欄は数量×単価で自動計算されますが、直接書き換えることもできます。区分は、この調整をどちらの請求書(保険分/自費分)に計上するかを選択してください。
     </p>
     <div class="form-actions">
       <button class="btn" id="btn-cancel">キャンセル</button>
@@ -428,6 +492,7 @@ function openAdjustmentModal(clients: Client[], existing?: LateAdjustment) {
     const updated: LateAdjustment = {
       ...a,
       clientId: (box.querySelector('#f-client') as HTMLSelectElement).value,
+      billingType: (box.querySelector('#f-billing-type') as HTMLSelectElement).value as BillingType,
       originalYearMonth,
       billedYearMonth,
       reason: (box.querySelector('#f-reason') as HTMLInputElement).value.trim(),
@@ -453,6 +518,7 @@ function invoiceRowHtml(inv: Invoice): string {
     <tr>
       <td>${inv.invoiceNo ? escapeHtml(inv.invoiceNo) : '-'}</td>
       <td>${escapeHtml(client?.name ?? '(削除済み)')}</td>
+      <td>${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]}</td>
       <td>${formatYmJapanese(inv.cycleStartMonth)} 〜 ${formatYmJapanese(inv.cycleEndMonth)}</td>
       <td class="num">${formatYen(inv.totalAmount)}</td>
       <td>${statusBadge}</td>
@@ -474,7 +540,8 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   const company = store.getState().company;
 
   const issueDateLabel = invoice.issuedDate ? formatDateJapanese(invoice.issuedDate) : formatDateJapanese(todayIso());
-  const ratioLabel = client ? COMPACT_COPAY_LABELS[client.copayRatio] : '';
+  // 負担割合は介護保険分の請求書のみ意味を持つ(自費分は自己負担割合の概念がないため表示しない)
+  const ratioLabel = client && invoice.billingCategory !== 'private' ? COMPACT_COPAY_LABELS[client.copayRatio] : '';
 
   const monthRows = invoice.months.map((m, idx) => monthRowHtml(m, idx, ratioLabel)).join('');
   const adjustmentRows = invoice.adjustments.map(adjustmentRowHtmlForTable).join('');
@@ -494,7 +561,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       印刷ボタンで画面が変わらない場合は、キーボードの Ctrl+P(Macは⌘+P)をお試しください。
     </p>
     <div class="invoice-sheet" id="invoice-sheet">
-      <h2 class="inv-title">請求書</h2>
+      <h2 class="inv-title">請求書${invoice.billingCategory !== 'combined' ? `<span class="inv-category-badge no-print">(${INVOICE_BILLING_CATEGORY_LABELS[invoice.billingCategory]})</span>` : ''}</h2>
       <div class="inv-header-row">
         <div class="inv-client-line">${escapeHtml(client?.name ?? '')}<span class="inv-sama">様</span></div>
         <div class="inv-meta">
@@ -581,11 +648,10 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
 function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel: string): string {
   if (month.lines.length === 0) return ''; // 利用実績のない月は行を出さない(途中解約等で4か月そろわない場合に対応)
   const { month: monthNumber } = parseYearMonth(month.yearMonth);
-  const hasInsuranceLine = month.lines.length > 0;
   return `
     <tr>
       <td>${monthNumber}月分レンタル料</td>
-      <td>${hasInsuranceLine ? ratioLabel : ''}</td>
+      <td>${ratioLabel}</td>
       <td class="num">${formatYen(month.nonTaxableSubtotal)}</td>
       <td class="num">${formatYen(month.taxableSubtotal)}</td>
       <td class="num">${formatYen(month.subtotal)}</td>

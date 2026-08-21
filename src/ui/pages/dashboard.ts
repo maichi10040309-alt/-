@@ -1,11 +1,11 @@
 import { store } from '@/store';
-import { getClientCycles } from '@/utils/billing';
+import { buildInvoiceMonths, getClientCycles } from '@/utils/billing';
 import { currentYearMonth, formatYmJapanese } from '@/utils/date';
 import { formatYen } from '@/utils/format';
 import { navigate } from '@/ui/router';
 
 export function renderDashboardPage(root: HTMLElement) {
-  const { clients, usageEntries, invoices } = store.getState();
+  const { clients, usageEntries, invoices, lateAdjustments, items } = store.getState();
   const thisMonth = currentYearMonth();
 
   const activeClients = clients.filter((c) => c.active);
@@ -13,14 +13,18 @@ export function renderDashboardPage(root: HTMLElement) {
   let dueCount = 0;
   let dueAmount = 0;
   for (const client of clients) {
+    if (client.paymentMethod === 'cash') continue; // 都度現金の方は自動請求対象に含めない
     const cycles = getClientCycles(client, usageEntries, invoices, thisMonth);
     for (const cycle of cycles) {
-      if (cycle.isDue && !cycle.invoice) {
+      if (!cycle.isDue || cycle.combinedInvoice) continue;
+      for (const category of ['insurance', 'private'] as const) {
+        const alreadyInvoiced = category === 'insurance' ? cycle.insuranceInvoice : cycle.privateInvoice;
+        if (alreadyInvoiced) continue;
+        const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments, items, category);
+        const hasData = preview.months.some((m) => m.lines.length > 0) || preview.adjustments.length > 0;
+        if (!hasData) continue;
         dueCount++;
-        const monthsInCycle = usageEntries.filter(
-          (u) => u.clientId === client.id && cycle.months.includes(u.yearMonth)
-        );
-        dueAmount += monthsInCycle.reduce((sum, u) => sum + u.amount, 0);
+        dueAmount += preview.totalAmount;
       }
     }
   }
