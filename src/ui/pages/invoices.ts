@@ -67,7 +67,7 @@ function clientDueStatusLabel(
     (category) => !categoryInvoiceOf(latest, category) && cycleCategoryHasData(latest, category)
   );
   if (stillPending) {
-    return '上の「請求対象(未請求)」一覧に表示されています。';
+    return '上の「請求対象(未請求)」の「今回分」または「過去の未請求分」に表示されています。';
   }
   return `${periodLabel}は請求済みです。`;
 }
@@ -84,18 +84,10 @@ export function renderInvoicesPage(root: HTMLElement) {
   const { clients, usageEntries, invoices, lateAdjustments, items } = store.getState();
 
   const allDueRows: DueRow[] = [];
-  // 利用者ごとの「一番新しいサイクル」の締め月(まだ請求対象になっていなくても)。
-  // これと一致する未請求行だけを「今回分」とし、それより前のサイクルは締め済みでも
-  // 「過去の未請求分」に回す(旧Excel運用からの移行期など、導入前から続く利用者で
-  // 古い未請求サイクルが積み残っている場合に、直近の請求対象と混在させないため)。
-  const latestCycleEndByClient = new Map<string, string>();
 
   for (const client of clients) {
     if (client.paymentMethod === 'cash') continue; // 都度現金の方は自動請求対象に含めない
     const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
-    if (cycles.length > 0) {
-      latestCycleEndByClient.set(client.id, cycles[cycles.length - 1].cycleEndMonth);
-    }
     for (const cycle of cycles) {
       if (!cycle.isDue || cycle.combinedInvoice) continue;
       for (const category of ['insurance', 'private'] as const) {
@@ -112,7 +104,10 @@ export function renderInvoicesPage(root: HTMLElement) {
     }
   }
 
-  const isCurrent = (r: DueRow) => latestCycleEndByClient.get(r.clientId) === r.cycleEndMonth;
+  // サイクルが締まった翌月(=請求月)ちょうどが基準月であるものだけを「今回分」とする。
+  // 例: 7〜10月分は11月が請求月なので、基準月=11月の間だけ今回分として表示され、
+  // 12月になる(基準月を進める)と「過去の未請求分」に回る。
+  const isCurrent = (r: DueRow) => addMonths(r.cycleEndMonth, 1) === referenceMonth;
   const dueRows = allDueRows.filter(isCurrent).sort((a, b) => a.cycleEndMonth.localeCompare(b.cycleEndMonth));
   const pastDueRows = allDueRows.filter((r) => !isCurrent(r)).sort((a, b) => a.cycleEndMonth.localeCompare(b.cycleEndMonth));
 
