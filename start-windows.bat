@@ -21,9 +21,10 @@ if not exist node_modules (
 
 echo.
 echo 販売管理ソフトを起動しています...
+echo (このパソコンをサーバーにします。他のパソコンから使う場合は、表示されるURLをそちらのブラウザで開いてください)
 echo 終了するときは、このウィンドウを閉じてください。
 echo.
 
-start "" cmd /c "timeout /t 3 >nul && start http://localhost:5173/"
-call npm run dev
+start "" cmd /c "timeout /t 6 >nul && start http://localhost:4000/"
+call npm run start
 pause

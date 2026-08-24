@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '../api/useLiveQuery';
 import { Link } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { formatMoney, formatDateJa, todayISO } from '../utils/format';
 import { itemAmount } from '../utils/tax';
@@ -9,10 +9,10 @@ import { calcReceivables } from '../utils/receivables';
 import { DOCUMENT_TYPE_LABEL, DOCUMENT_STATUS_LABEL, type DocumentType } from '../types';
 
 export default function Dashboard() {
-  const company = useLiveQuery(() => db.company.get(1), []);
-  const documents = useLiveQuery(() => db.documents.toArray(), []);
-  const customers = useLiveQuery(() => db.customers.toArray(), []);
-  const products = useLiveQuery(() => db.products.toArray(), []);
+  const company = useLiveQuery(() => api.company.get(), []);
+  const documents = useLiveQuery(() => api.documents.list(), []);
+  const customers = useLiveQuery(() => api.customers.list(), []);
+  const products = useLiveQuery(() => api.products.list(), []);
 
   const today = todayISO();
   const thisMonth = today.slice(0, 7);

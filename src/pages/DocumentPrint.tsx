@@ -1,6 +1,6 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '../api/useLiveQuery';
 import { useNavigate, useParams } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import { calcDocumentTotals } from '../utils/tax';
 import { formatDateJa, formatMoney } from '../utils/format';
 import { DOCUMENT_TYPE_LABEL, type DocumentType } from '../types';
@@ -11,9 +11,12 @@ export default function DocumentPrint() {
   const docType = type as DocumentType;
   const navigate = useNavigate();
 
-  const company = useLiveQuery(() => db.company.get(1), []);
-  const doc = useLiveQuery(() => db.documents.get(id!), [id]);
-  const customer = useLiveQuery(() => (doc ? db.customers.get(doc.customerId) : undefined), [doc]);
+  const company = useLiveQuery(() => api.company.get(), []);
+  const doc = useLiveQuery(() => api.documents.get(id!), [id]);
+  const customer = useLiveQuery(
+    () => (doc ? api.customers.get(doc.customerId) : Promise.resolve(undefined)),
+    [doc],
+  );
 
   if (!doc || !company) return <div className="card">読み込み中...</div>;
 

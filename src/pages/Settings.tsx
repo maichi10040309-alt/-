@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import type { CompanyInfo } from '../types';
 
@@ -8,7 +8,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    db.company.get(1).then((c) => c && setCompany(c));
+    api.company.get().then((c) => c && setCompany(c));
   }, []);
 
   if (!company) return <div className="card">読み込み中...</div>;
@@ -17,19 +17,13 @@ export default function Settings() {
     setCompany((c) => (c ? { ...c, [key]: value } : c));
 
   const handleSave = async () => {
-    await db.company.put(company);
+    await api.company.put(company);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const handleBackup = async () => {
-    const [customers, products, documents, companyData] = await Promise.all([
-      db.customers.toArray(),
-      db.products.toArray(),
-      db.documents.toArray(),
-      db.company.toArray(),
-    ]);
-    const data = { customers, products, documents, company: companyData, exportedAt: new Date().toISOString() };
+    const data = await api.backup.export();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -42,15 +36,10 @@ export default function Settings() {
   };
 
   const handleRestore = async (file: File) => {
-    if (!confirm('現在のデータを上書きして復元します。よろしいですか?')) return;
+    if (!confirm('サーバー上の現在のデータを上書きして復元します。よろしいですか?')) return;
     const text = await file.text();
     const data = JSON.parse(text);
-    await db.transaction('rw', db.customers, db.products, db.documents, db.company, async () => {
-      if (Array.isArray(data.customers)) await db.customers.bulkPut(data.customers);
-      if (Array.isArray(data.products)) await db.products.bulkPut(data.products);
-      if (Array.isArray(data.documents)) await db.documents.bulkPut(data.documents);
-      if (Array.isArray(data.company)) await db.company.bulkPut(data.company);
-    });
+    await api.backup.import(data);
     alert('復元が完了しました。');
     location.reload();
   };
@@ -135,7 +124,10 @@ export default function Settings() {
 
       <div className="card">
         <div className="section-divider">データのバックアップ・復元</div>
-        <p className="hint">このソフトのデータはブラウザ内(端末内)に保存されます。定期的にバックアップの保存をおすすめします。</p>
+        <p className="hint">
+          データはサーバー役のパソコン(server/data/db.json)に保存され、同じサーバーに接続した全端末で共有されます。
+          定期的にバックアップの保存をおすすめします。
+        </p>
         <div className="form-actions-inline">
           <button className="btn btn-secondary" onClick={handleBackup}>
             バックアップを保存(JSON)

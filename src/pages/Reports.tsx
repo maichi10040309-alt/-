@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '../api/useLiveQuery';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { formatMoney, addMonths, todayISO } from '../utils/format';
 import { itemAmount } from '../utils/tax';
@@ -11,8 +11,8 @@ import { itemAmount } from '../utils/tax';
 const SALES_TYPES = new Set(['delivery', 'invoice']);
 
 export default function Reports() {
-  const documents = useLiveQuery(() => db.documents.toArray(), []);
-  const customers = useLiveQuery(() => db.customers.toArray(), []);
+  const documents = useLiveQuery(() => api.documents.list(), []);
+  const customers = useLiveQuery(() => api.customers.list(), []);
 
   const today = todayISO();
   const [from, setFrom] = useState(addMonths(today, -12).slice(0, 8) + '01');

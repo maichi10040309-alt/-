@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { newId } from '../utils/id';
 import type { Product } from '../types';
@@ -27,10 +27,11 @@ export default function ProductEdit() {
 
   useEffect(() => {
     if (isNew) return;
-    db.products.get(id!).then((p) => {
-      if (p) setProduct(p);
-      setLoaded(true);
-    });
+    api.products
+      .get(id!)
+      .then((p) => setProduct(p))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, [id, isNew]);
 
   const set = <K extends keyof Product>(key: K, value: Product[K]) =>
@@ -47,16 +48,15 @@ export default function ProductEdit() {
     const now = new Date().toISOString();
     let code = product.code;
     if (!code) {
-      const count = await db.products.count();
-      code = `P${String(count + 1).padStart(4, '0')}`;
+      code = await api.products.nextCode();
     }
-    await db.products.put({ ...product, code, updatedAt: now });
+    await api.products.put({ ...product, code, updatedAt: now });
     navigate('/products');
   };
 
   const handleDelete = async () => {
     if (!confirm('この商品を削除しますか?')) return;
-    await db.products.delete(product.id);
+    await api.products.delete(product.id);
     navigate('/products');
   };
 

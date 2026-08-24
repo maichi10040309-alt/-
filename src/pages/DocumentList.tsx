@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '../api/useLiveQuery';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { DOCUMENT_STATUS_LABEL, DOCUMENT_TYPE_LABEL, type DocumentType } from '../types';
 import { calcDocumentTotals } from '../utils/tax';
@@ -13,12 +13,9 @@ export default function DocumentList() {
   const docType = type as DocumentType;
   const label = DOCUMENT_TYPE_LABEL[docType] ?? '伝票';
 
-  const company = useLiveQuery(() => db.company.get(1), []);
-  const customers = useLiveQuery(() => db.customers.toArray(), []);
-  const documents = useLiveQuery(
-    () => db.documents.where('type').equals(docType).reverse().sortBy('issueDate'),
-    [docType],
-  );
+  const company = useLiveQuery(() => api.company.get(), []);
+  const customers = useLiveQuery(() => api.customers.list(), []);
+  const documents = useLiveQuery(() => api.documents.listByType(docType), [docType]);
   const [keyword, setKeyword] = useState('');
 
   const customerMap = useMemo(() => {

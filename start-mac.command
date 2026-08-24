@@ -20,8 +20,9 @@ fi
 
 echo ""
 echo "販売管理ソフトを起動しています..."
+echo "(このパソコンをサーバーにします。他のパソコンから使う場合は、表示されるURLをそちらのブラウザで開いてください)"
 echo "終了するときは、このウィンドウを閉じるか Ctrl+C を押してください。"
 echo ""
 
-( sleep 3 && open http://localhost:5173/ ) &
-npm run dev
+( sleep 6 && open http://localhost:4000/ ) &
+npm run start

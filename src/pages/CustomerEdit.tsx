@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { newId } from '../utils/id';
 import type { Customer } from '../types';
@@ -36,10 +36,11 @@ export default function CustomerEdit() {
 
   useEffect(() => {
     if (isNew) return;
-    db.customers.get(id!).then((c) => {
-      if (c) setCustomer(c);
-      setLoaded(true);
-    });
+    api.customers
+      .get(id!)
+      .then((c) => setCustomer(c))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, [id, isNew]);
 
   const set = <K extends keyof Customer>(key: K, value: Customer[K]) =>
@@ -53,16 +54,15 @@ export default function CustomerEdit() {
     const now = new Date().toISOString();
     let code = customer.code;
     if (!code) {
-      const count = await db.customers.count();
-      code = `C${String(count + 1).padStart(4, '0')}`;
+      code = await api.customers.nextCode();
     }
-    await db.customers.put({ ...customer, code, updatedAt: now });
+    await api.customers.put({ ...customer, code, updatedAt: now });
     navigate('/customers');
   };
 
   const handleDelete = async () => {
     if (!confirm('この得意先を削除しますか?')) return;
-    await db.customers.delete(customer.id);
+    await api.customers.delete(customer.id);
     navigate('/customers');
   };
 

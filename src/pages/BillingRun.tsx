@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '../api/useLiveQuery';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { newId } from '../utils/id';
 import { todayISO, addDays, formatDateJa, formatMoney } from '../utils/format';
@@ -16,9 +16,9 @@ function firstDayOfMonth(iso: string) {
 
 export default function BillingRun() {
   const navigate = useNavigate();
-  const company = useLiveQuery(() => db.company.get(1), []);
-  const customers = useLiveQuery(() => db.customers.orderBy('code').toArray(), []);
-  const allDocuments = useLiveQuery(() => db.documents.toArray(), []);
+  const company = useLiveQuery(() => api.company.get(), []);
+  const customers = useLiveQuery(() => api.customers.list(), []);
+  const allDocuments = useLiveQuery(() => api.documents.list(), []);
 
   const today = todayISO();
   const [customerId, setCustomerId] = useState<string>('');
@@ -114,11 +114,11 @@ export default function BillingRun() {
         createdAt: now,
         updatedAt: now,
       };
-      await db.documents.put(newDoc);
+      await api.documents.put(newDoc);
       createdIds.push(newDoc.id);
 
       for (const d of docs) {
-        await db.documents.update(d.id, { status: 'closed', convertedToDocumentId: newDoc.id, updatedAt: now });
+        await api.documents.patch(d.id, { status: 'closed', convertedToDocumentId: newDoc.id, updatedAt: now });
       }
     }
 

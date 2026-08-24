@@ -38,6 +38,16 @@ body {
   justify-content: center;
   height: 100vh;
   color: var(--color-text-muted);
+  text-align: center;
+}
+
+.boot-error {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.boot-error p {
+  margin: 0 0 6px;
 }
 
 .app-shell {

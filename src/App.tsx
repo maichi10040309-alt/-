@@ -13,17 +13,43 @@ import BillingRun from './pages/BillingRun';
 import Receivables from './pages/Receivables';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
-import { ensureCompanySeed } from './db/db';
+import { api } from './api/client';
+
+type BootState = 'checking' | 'ready' | 'error';
 
 function App() {
-  const [ready, setReady] = useState(false);
+  const [boot, setBoot] = useState<BootState>('checking');
+
+  const checkConnection = () => {
+    setBoot('checking');
+    api.company
+      .get()
+      .then(() => setBoot('ready'))
+      .catch(() => setBoot('error'));
+  };
 
   useEffect(() => {
-    ensureCompanySeed().then(() => setReady(true));
+    checkConnection();
   }, []);
 
-  if (!ready) {
+  if (boot === 'checking') {
     return <div className="boot-loading">読み込み中...</div>;
+  }
+
+  if (boot === 'error') {
+    return (
+      <div className="boot-loading boot-error">
+        <div>
+          <p>サーバーに接続できません。</p>
+          <p className="hint">
+            起動ファイル(start-mac.command / start-windows.bat)でサーバーが起動しているか確認してください。
+          </p>
+          <button className="btn btn-primary" onClick={checkConnection}>
+            再接続する
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

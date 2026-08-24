@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '../api/useLiveQuery';
 import { Link } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { parseCSV, toCSV, downloadCSV } from '../utils/csv';
 import { newId } from '../utils/id';
@@ -22,7 +22,7 @@ const CSV_HEADERS = [
 ];
 
 export default function ProductList() {
-  const products = useLiveQuery(() => db.products.orderBy('code').toArray(), []);
+  const products = useLiveQuery(() => api.products.list(), []);
   const [keyword, setKeyword] = useState('');
 
   const filtered = useMemo(() => {
@@ -76,7 +76,7 @@ export default function ProductList() {
         createdAt: now,
         updatedAt: now,
       }));
-    await db.products.bulkPut(records);
+    await api.products.bulkPut(records);
     alert(`${records.length}件の商品を取り込みました。`);
   };
 

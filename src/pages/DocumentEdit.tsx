@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '../api/useLiveQuery';
 import { useNavigate, useParams } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import ItemsEditor from '../components/ItemsEditor';
 import TotalsBox from '../components/TotalsBox';
@@ -43,9 +43,9 @@ export default function DocumentEdit() {
   const isNew = id === 'new';
   const navigate = useNavigate();
 
-  const company = useLiveQuery(() => db.company.get(1), []);
-  const customers = useLiveQuery(() => db.customers.orderBy('code').toArray(), []);
-  const products = useLiveQuery(() => db.products.orderBy('code').toArray(), []);
+  const company = useLiveQuery(() => api.company.get(), []);
+  const customers = useLiveQuery(() => api.customers.list(), []);
+  const products = useLiveQuery(() => api.products.list(), []);
 
   const [doc, setDoc] = useState<SalesDocument>(emptyDoc(docType));
   const [loaded, setLoaded] = useState(isNew);
@@ -56,10 +56,11 @@ export default function DocumentEdit() {
       setLoaded(true);
       return;
     }
-    db.documents.get(id!).then((d) => {
-      if (d) setDoc(d);
-      setLoaded(true);
-    });
+    api.documents
+      .get(id!)
+      .then((d) => setDoc(d))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, [id, isNew, docType]);
 
   const set = <K extends keyof SalesDocument>(key: K, value: SalesDocument[K]) =>
@@ -79,14 +80,14 @@ export default function DocumentEdit() {
       toSave.number = await issueDocumentNumber(docType, toSave.issueDate);
       toSave.status = 'issued';
     }
-    await db.documents.put(toSave);
+    await api.documents.put(toSave);
     setDoc(toSave);
     navigate(`/documents/${docType}`);
   };
 
   const handleDelete = async () => {
     if (!confirm('この伝票を削除しますか?')) return;
-    await db.documents.delete(doc.id);
+    await api.documents.delete(doc.id);
     navigate(`/documents/${docType}`);
   };
 
@@ -113,8 +114,8 @@ export default function DocumentEdit() {
       createdAt: now,
       updatedAt: now,
     };
-    await db.documents.put(newDoc);
-    await db.documents.update(doc.id, { status: 'converted', convertedToDocumentId: newDoc.id, updatedAt: now });
+    await api.documents.put(newDoc);
+    await api.documents.patch(doc.id, { status: 'converted', convertedToDocumentId: newDoc.id, updatedAt: now });
     navigate(`/documents/${targetType}/${newDoc.id}`);
   };
 

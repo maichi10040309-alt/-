@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/db';
+import { useLiveQuery } from '../api/useLiveQuery';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { calcReceivables } from '../utils/receivables';
 import { formatMoney } from '../utils/format';
 
 export default function Receivables() {
-  const company = useLiveQuery(() => db.company.get(1), []);
-  const customers = useLiveQuery(() => db.customers.orderBy('code').toArray(), []);
-  const documents = useLiveQuery(() => db.documents.toArray(), []);
+  const company = useLiveQuery(() => api.company.get(), []);
+  const customers = useLiveQuery(() => api.customers.list(), []);
+  const documents = useLiveQuery(() => api.documents.list(), []);
 
   const balances = useMemo(
     () => (documents ? calcReceivables(documents, company?.taxRounding ?? 'floor') : new Map()),

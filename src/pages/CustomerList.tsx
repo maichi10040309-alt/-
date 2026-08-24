@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '../api/useLiveQuery';
 import { Link } from 'react-router-dom';
-import { db } from '../db/db';
+import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import { parseCSV, toCSV, downloadCSV } from '../utils/csv';
 import { newId } from '../utils/id';
@@ -28,7 +28,7 @@ const CSV_HEADERS = [
 ];
 
 export default function CustomerList() {
-  const customers = useLiveQuery(() => db.customers.orderBy('code').toArray(), []);
+  const customers = useLiveQuery(() => api.customers.list(), []);
   const [keyword, setKeyword] = useState('');
 
   const filtered = useMemo(() => {
@@ -95,7 +95,7 @@ export default function CustomerList() {
         createdAt: now,
         updatedAt: now,
       }));
-    await db.customers.bulkPut(records);
+    await api.customers.bulkPut(records);
     alert(`${records.length}件の得意先を取り込みました。`);
   };
 
