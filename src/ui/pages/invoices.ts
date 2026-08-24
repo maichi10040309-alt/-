@@ -325,13 +325,14 @@ export function renderInvoicesPage(root: HTMLElement) {
             <th>対象期間</th>
             <th class="num">請求金額</th>
             <th>状態</th>
+            <th>入金</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="invoice-rows">
           ${
             sortedInvoices.length === 0
-              ? `<tr class="empty-row"><td colspan="7">請求書はまだ作成されていません。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="8">請求書はまだ作成されていません。</td></tr>`
               : sortedInvoices.map(invoiceRowHtml).join('')
           }
         </tbody>
@@ -380,6 +381,7 @@ export function renderInvoicesPage(root: HTMLElement) {
       billingCategory: category,
       status: 'draft',
       issuedDate: null,
+      paidDate: null,
       createdAt: new Date().toISOString(),
     };
     store.saveInvoice(invoice);
@@ -679,6 +681,9 @@ function invoiceRowHtml(inv: Invoice): string {
     inv.status === 'issued'
       ? `<span class="badge badge-success">発行済み(${inv.issuedDate ? formatDateJapanese(inv.issuedDate) : ''})</span>`
       : `<span class="badge badge-warning">下書き</span>`;
+  const paidBadge = inv.paidDate
+    ? `<span class="badge badge-success">入金済み(${formatDateJapanese(inv.paidDate)})</span>`
+    : `<span class="badge badge-muted">未入金</span>`;
   return `
     <tr>
       <td>${inv.invoiceNo ? escapeHtml(inv.invoiceNo) : '-'}</td>
@@ -687,6 +692,7 @@ function invoiceRowHtml(inv: Invoice): string {
       <td>${formatYmJapanese(inv.cycleStartMonth)} 〜 ${formatYmJapanese(inv.cycleEndMonth)}</td>
       <td class="num">${formatYen(inv.totalAmount)}</td>
       <td>${statusBadge}</td>
+      <td>${paidBadge}</td>
       <td class="actions-cell">
         <button class="btn-link js-view" data-id="${inv.id}">表示</button>
       </td>
@@ -715,6 +721,12 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
     <div class="invoice-actions no-print">
       <button class="btn" id="btn-back">← 一覧に戻る</button>
       <div style="flex:1"></div>
+      ${
+        invoice.paidDate
+          ? `<span class="badge badge-success" style="align-self:center">入金済み(${formatDateJapanese(invoice.paidDate)})</span>
+             <button class="btn" id="btn-unpaid">未入金に戻す</button>`
+          : `<button class="btn btn-primary" id="btn-paid">入金済みにする</button>`
+      }
       ${
         invoice.status === 'draft'
           ? `<button class="btn btn-primary" id="btn-issue">発行済みにする</button>`
@@ -796,6 +808,14 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       status: 'issued',
       issuedDate: todayIso(),
     });
+  });
+  root.querySelector('#btn-paid')?.addEventListener('click', async () => {
+    if (!(await showConfirm('この請求書を入金済みにします。よろしいですか?'))) return;
+    store.saveInvoice({ ...invoice, paidDate: todayIso() });
+  });
+  root.querySelector('#btn-unpaid')?.addEventListener('click', async () => {
+    if (!(await showConfirm('入金済みを取り消して未入金に戻します。よろしいですか?'))) return;
+    store.saveInvoice({ ...invoice, paidDate: null });
   });
 
   root.querySelectorAll('.js-month-note').forEach((el) =>

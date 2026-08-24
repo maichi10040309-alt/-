@@ -131,6 +131,7 @@ export interface Invoice {
   billingCategory: InvoiceBillingCategory;
   status: InvoiceStatus;
   issuedDate: string | null; // "YYYY-MM-DD"
+  paidDate: string | null; // "YYYY-MM-DD"。入金確認できた日(都度現金・早期請求など、締めを待たず随時入金されるケースの入金管理用)
   createdAt: string; // ISO日時
 }
 

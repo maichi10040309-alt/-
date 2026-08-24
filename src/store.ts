@@ -41,6 +41,7 @@ function migrateState(state: AppState): AppState {
     invoice.nonTaxableTotal = nonTaxableTotal;
     invoice.taxableTotal = taxableTotal;
     if (!invoice.adjustments) invoice.adjustments = [];
+    if (invoice.paidDate === undefined) invoice.paidDate = null;
     // 区分未設定の請求書(保険/自費の分割請求より前に作成されたもの)は、
     // 保険・自費が1枚に混在した旧形式として扱う。
     if (
