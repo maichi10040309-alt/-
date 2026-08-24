@@ -72,26 +72,36 @@ function clientDueStatusLabel(
   return `${periodLabel}は請求済みです。`;
 }
 
+type DueRow = {
+  clientId: string;
+  clientName: string;
+  cycleStartMonth: string;
+  cycleEndMonth: string;
+  category: BillingType;
+};
+
 export function renderInvoicesPage(root: HTMLElement) {
   const { clients, usageEntries, invoices, lateAdjustments, items } = store.getState();
 
-  const dueRows: {
-    clientId: string;
-    clientName: string;
-    cycleStartMonth: string;
-    cycleEndMonth: string;
-    category: BillingType;
-  }[] = [];
+  const allDueRows: DueRow[] = [];
+  // 利用者ごとの「一番新しいサイクル」の締め月(まだ請求対象になっていなくても)。
+  // これと一致する未請求行だけを「今回分」とし、それより前のサイクルは締め済みでも
+  // 「過去の未請求分」に回す(旧Excel運用からの移行期など、導入前から続く利用者で
+  // 古い未請求サイクルが積み残っている場合に、直近の請求対象と混在させないため)。
+  const latestCycleEndByClient = new Map<string, string>();
 
   for (const client of clients) {
     if (client.paymentMethod === 'cash') continue; // 都度現金の方は自動請求対象に含めない
     const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
+    if (cycles.length > 0) {
+      latestCycleEndByClient.set(client.id, cycles[cycles.length - 1].cycleEndMonth);
+    }
     for (const cycle of cycles) {
       if (!cycle.isDue || cycle.combinedInvoice) continue;
       for (const category of ['insurance', 'private'] as const) {
         if (categoryInvoiceOf(cycle, category)) continue;
         if (!cycleCategoryHasData(cycle, category)) continue;
-        dueRows.push({
+        allDueRows.push({
           clientId: client.id,
           clientName: client.name,
           cycleStartMonth: cycle.cycleStartMonth,
@@ -101,7 +111,10 @@ export function renderInvoicesPage(root: HTMLElement) {
       }
     }
   }
-  dueRows.sort((a, b) => a.cycleEndMonth.localeCompare(b.cycleEndMonth));
+
+  const isCurrent = (r: DueRow) => latestCycleEndByClient.get(r.clientId) === r.cycleEndMonth;
+  const dueRows = allDueRows.filter(isCurrent).sort((a, b) => a.cycleEndMonth.localeCompare(b.cycleEndMonth));
+  const pastDueRows = allDueRows.filter((r) => !isCurrent(r)).sort((a, b) => a.cycleEndMonth.localeCompare(b.cycleEndMonth));
 
   const sortedInvoices = [...invoices].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -168,7 +181,7 @@ export function renderInvoicesPage(root: HTMLElement) {
               clients.length === 0
                 ? `<tr class="empty-row"><td colspan="2">利用者が登録されていません。</td></tr>`
                 : [...clients]
-                    .filter((c) => !dueRows.some((r) => r.clientId === c.id))
+                    .filter((c) => !dueRows.some((r) => r.clientId === c.id) && !pastDueRows.some((r) => r.clientId === c.id))
                     .sort((a, b) => a.kana.localeCompare(b.kana, 'ja'))
                     .map(
                       (c) => `
@@ -177,6 +190,54 @@ export function renderInvoicesPage(root: HTMLElement) {
                   <td>${escapeHtml(clientDueStatusLabel(c, usageEntries, invoices, referenceMonth))}</td>
                 </tr>
               `
+                    )
+                    .join('')
+            }
+          </tbody>
+        </table>
+      </details>
+    </div>
+
+    <div class="card">
+      <details ${pastDueRows.length > 0 ? 'open' : ''}>
+        <summary style="cursor:pointer">
+          <span class="card-title" style="display:inline">過去の未請求分 ${pastDueRows.length > 0 ? `<span class="badge badge-warning">${pastDueRows.length}件</span>` : ''}</span>
+        </summary>
+        <p class="page-subtitle" style="margin:12px 0">
+          直近の対象期間より前に、締め済みなのにまだ請求書を作成していないサイクルです。導入前から利用中の方の場合、
+          旧Excel等で既に請求済みのことも多いため、内容を確認してから作成してください。
+        </p>
+        <div class="toolbar">
+          <div></div>
+          <button class="btn btn-sm btn-primary" id="btn-bulk-create-past" ${pastDueRows.length === 0 ? 'disabled' : ''}>選択した請求書をまとめて作成</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:24px"><input type="checkbox" id="f-select-all-past" ${pastDueRows.length === 0 ? 'disabled' : ''} /></th>
+              <th>利用者</th>
+              <th>区分</th>
+              <th>請求対象期間</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="past-due-rows">
+            ${
+              pastDueRows.length === 0
+                ? `<tr class="empty-row"><td colspan="5">過去の未請求分はありません。</td></tr>`
+                : pastDueRows
+                    .map(
+                      (r, idx) => `
+              <tr>
+                <td><input type="checkbox" class="js-due-check-past" data-index="${idx}" /></td>
+                <td>${escapeHtml(r.clientName)}</td>
+                <td>${BILLING_TYPE_LABELS[r.category]}</td>
+                <td>${formatYmJapanese(r.cycleStartMonth)} 〜 ${formatYmJapanese(r.cycleEndMonth)}</td>
+                <td class="actions-cell">
+                  <button class="btn btn-sm btn-primary js-create" data-client="${r.clientId}" data-cycle="${r.cycleStartMonth}" data-category="${r.category}">請求書を作成</button>
+                </td>
+              </tr>
+            `
                     )
                     .join('')
             }
@@ -326,41 +387,52 @@ export function renderInvoicesPage(root: HTMLElement) {
     return invoice;
   }
 
-  root.querySelector('#due-rows')?.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.js-create') as HTMLElement | null;
-    if (!btn) return;
-    createInvoiceForCycle(
-      btn.dataset.client!,
-      btn.dataset.cycle!,
-      referenceMonth,
-      btn.dataset.category as BillingType
-    );
-  });
-
-  const selectAllCheckbox = root.querySelector('#f-select-all') as HTMLInputElement | null;
-  selectAllCheckbox?.addEventListener('change', () => {
-    root.querySelectorAll('.js-due-check').forEach((el) => {
-      (el as HTMLInputElement).checked = selectAllCheckbox.checked;
+  function wireDueSection(
+    rowsElId: string,
+    checkClass: string,
+    selectAllId: string,
+    bulkBtnId: string,
+    rows: DueRow[]
+  ) {
+    root.querySelector(`#${rowsElId}`)?.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest('.js-create') as HTMLElement | null;
+      if (!btn) return;
+      createInvoiceForCycle(
+        btn.dataset.client!,
+        btn.dataset.cycle!,
+        referenceMonth,
+        btn.dataset.category as BillingType
+      );
     });
-  });
 
-  root.querySelector('#btn-bulk-create')?.addEventListener('click', async () => {
-    const checked = Array.from(root.querySelectorAll('.js-due-check:checked')) as HTMLInputElement[];
-    if (checked.length === 0) {
-      await showAlert('請求書を作成する行にチェックを入れてください。');
-      return;
-    }
-    if (!(await showConfirm(`選択した${checked.length}件の請求書をまとめて作成します。よろしいですか?`))) return;
-    let created = 0;
-    for (const cb of checked) {
-      const row = dueRows[Number(cb.dataset.index)];
-      if (!row) continue;
-      const invoice = createInvoiceForCycle(row.clientId, row.cycleStartMonth, referenceMonth, row.category, false);
-      if (invoice) created++;
-    }
-    await showAlert(`${created}件の請求書を作成しました(下書き)。内容は「請求書一覧」から確認できます。`);
-    renderInvoicesPage(root);
-  });
+    const selectAllCheckbox = root.querySelector(`#${selectAllId}`) as HTMLInputElement | null;
+    selectAllCheckbox?.addEventListener('change', () => {
+      root.querySelectorAll(`.${checkClass}`).forEach((el) => {
+        (el as HTMLInputElement).checked = selectAllCheckbox.checked;
+      });
+    });
+
+    root.querySelector(`#${bulkBtnId}`)?.addEventListener('click', async () => {
+      const checked = Array.from(root.querySelectorAll(`.${checkClass}:checked`)) as HTMLInputElement[];
+      if (checked.length === 0) {
+        await showAlert('請求書を作成する行にチェックを入れてください。');
+        return;
+      }
+      if (!(await showConfirm(`選択した${checked.length}件の請求書をまとめて作成します。よろしいですか?`))) return;
+      let created = 0;
+      for (const cb of checked) {
+        const row = rows[Number(cb.dataset.index)];
+        if (!row) continue;
+        const invoice = createInvoiceForCycle(row.clientId, row.cycleStartMonth, referenceMonth, row.category, false);
+        if (invoice) created++;
+      }
+      await showAlert(`${created}件の請求書を作成しました(下書き)。内容は「請求書一覧」から確認できます。`);
+      renderInvoicesPage(root);
+    });
+  }
+
+  wireDueSection('due-rows', 'js-due-check', 'f-select-all', 'btn-bulk-create', dueRows);
+  wireDueSection('past-due-rows', 'js-due-check-past', 'f-select-all-past', 'btn-bulk-create-past', pastDueRows);
 
   const earlyClientSelect = root.querySelector('#f-early-client') as HTMLSelectElement;
   const earlyCycleRows = root.querySelector('#early-cycle-rows') as HTMLElement;

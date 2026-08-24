@@ -1,10 +1,11 @@
 import { store, newId } from '@/store';
-import type { Client, ClientEvent, ClientEventType, CopayRatio, PaymentMethod } from '@/types';
-import { CLIENT_EVENT_TYPE_LABELS, COPAY_RATIO_LABELS, PAYMENT_METHOD_LABELS } from '@/types';
+import type { Client, ClientEvent, ClientEventType, CopayRatio, Invoice, PaymentMethod } from '@/types';
+import { CLIENT_EVENT_TYPE_LABELS, COPAY_RATIO_LABELS, INVOICE_BILLING_CATEGORY_LABELS, PAYMENT_METHOD_LABELS } from '@/types';
 import { escapeHtml } from '@/utils/format';
 import { openModal } from '@/ui/components/modal';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
-import { todayIso, formatDateJapanese } from '@/utils/date';
+import { todayIso, formatDateJapanese, formatYmJapanese } from '@/utils/date';
+import { navigate } from '@/ui/router';
 
 type Mode = 'list' | 'history';
 let mode: Mode = 'list';
@@ -41,6 +42,7 @@ export function renderClientsPage(root: HTMLElement) {
 
 function renderListSection(section: HTMLElement) {
   const clients = [...store.getState().clients].sort((a, b) => a.kana.localeCompare(b.kana, 'ja'));
+  const invoices = store.getState().invoices;
 
   section.innerHTML = `
     <div class="toolbar">
@@ -58,14 +60,15 @@ function renderListSection(section: HTMLElement) {
             <th>担当ケアマネ</th>
             <th>営業担当</th>
             <th>状態</th>
+            <th>最新請求書</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="client-rows">
           ${
             clients.length === 0
-              ? `<tr class="empty-row"><td colspan="8">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
-              : clients.map(rowHtml).join('')
+              ? `<tr class="empty-row"><td colspan="9">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
+              : clients.map((c) => rowHtml(c, invoices)).join('')
           }
         </tbody>
       </table>
@@ -89,11 +92,36 @@ function renderListSection(section: HTMLElement) {
       ) {
         store.deleteClient(id);
       }
+    } else if (target.classList.contains('js-view-invoice')) {
+      navigate(`invoices/${target.getAttribute('data-invoice-id')}`);
     }
   });
 }
 
-function rowHtml(c: Client): string {
+/** その利用者の請求書のうち、対象期間(cycleEndMonth)が一番新しいもの(複数区分あれば全て) */
+function latestInvoicesForClient(clientId: string, invoices: Invoice[]): Invoice[] {
+  const clientInvoices = invoices.filter((i) => i.clientId === clientId);
+  if (clientInvoices.length === 0) return [];
+  const maxEnd = clientInvoices.reduce((max, i) => (i.cycleEndMonth > max ? i.cycleEndMonth : max), clientInvoices[0].cycleEndMonth);
+  return clientInvoices.filter((i) => i.cycleEndMonth === maxEnd);
+}
+
+function latestInvoiceCellHtml(clientId: string, invoices: Invoice[]): string {
+  const latest = latestInvoicesForClient(clientId, invoices);
+  if (latest.length === 0) return '<span style="color:var(--color-text-muted)">-</span>';
+  return latest
+    .map((inv) => {
+      const label = `${formatYmJapanese(inv.cycleStartMonth)}〜${formatYmJapanese(inv.cycleEndMonth)}(${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]})`;
+      const statusBadge =
+        inv.status === 'issued'
+          ? ''
+          : '<span class="badge badge-warning" style="margin-left:4px;font-size:11px">下書き</span>';
+      return `<div><button class="btn-link js-view-invoice" data-invoice-id="${inv.id}">${escapeHtml(label)}</button>${statusBadge}</div>`;
+    })
+    .join('');
+}
+
+function rowHtml(c: Client, invoices: Invoice[]): string {
   return `
     <tr>
       <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
@@ -103,6 +131,7 @@ function rowHtml(c: Client): string {
       <td>${escapeHtml(c.careManagerName)}</td>
       <td>${escapeHtml(c.salesRepName)}</td>
       <td>${c.active ? '<span class="badge badge-success">利用中</span>' : '<span class="badge badge-muted">終了</span>'}</td>
+      <td>${latestInvoiceCellHtml(c.id, invoices)}</td>
       <td class="actions-cell">
         <button class="btn-link js-edit" data-id="${c.id}">編集</button>
         <button class="btn-link js-delete" data-id="${c.id}" style="color:#dc2626">削除</button>
