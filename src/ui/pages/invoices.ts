@@ -3,6 +3,7 @@ import type { BillingType, Client, CopayRatio, Invoice, LateAdjustment, TaxCateg
 import { INVOICE_BILLING_CATEGORY_LABELS, TAX_CATEGORY_LABELS } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import {
+  addMonths,
   currentYearMonth,
   formatDateJapanese,
   formatYmJapanese,
@@ -38,6 +39,37 @@ function cycleCategoryHasData(cycle: BillingCycle, category: BillingType): boole
 
 function categoryInvoiceOf(cycle: BillingCycle, category: BillingType): Invoice | null {
   return category === 'insurance' ? cycle.insuranceInvoice : cycle.privateInvoice;
+}
+
+/** 「請求対象(未請求)」に表示されていない利用者について、その理由を説明する文言を返す */
+function clientDueStatusLabel(
+  client: Client,
+  usageEntries: ReturnType<typeof store.getState>['usageEntries'],
+  invoices: Invoice[],
+  referenceMonth: string
+): string {
+  if (client.paymentMethod === 'cash') {
+    return '都度現金払いのため自動請求対象外です。「早期請求」から請求書を作成してください。';
+  }
+  const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
+  if (cycles.length === 0) {
+    return '利用実績がまだ入力されていません。';
+  }
+  const latest = cycles[cycles.length - 1];
+  const periodLabel = `${formatYmJapanese(latest.cycleStartMonth)} 〜 ${formatYmJapanese(latest.cycleEndMonth)}分`;
+  if (!latest.isDue) {
+    return `${periodLabel}は進行中のサイクルです。${formatYmJapanese(addMonths(latest.cycleEndMonth, 1))}になると自動的に請求対象になります(急ぐ場合は「早期請求」から作成できます)。`;
+  }
+  if (latest.combinedInvoice) {
+    return `${periodLabel}は請求済みです(旧形式の請求書)。`;
+  }
+  const stillPending = (['insurance', 'private'] as const).some(
+    (category) => !categoryInvoiceOf(latest, category) && cycleCategoryHasData(latest, category)
+  );
+  if (stillPending) {
+    return '上の「請求対象(未請求)」一覧に表示されています。';
+  }
+  return `${periodLabel}は請求済みです。`;
 }
 
 export function renderInvoicesPage(root: HTMLElement) {
@@ -86,10 +118,14 @@ export function renderInvoicesPage(root: HTMLElement) {
     </div>
 
     <div class="card">
-      <h3 class="card-title">請求対象(未請求) ${dueRows.length > 0 ? `<span class="badge badge-warning">${dueRows.length}件</span>` : ''}</h3>
+      <div class="toolbar">
+        <h3 class="card-title" style="margin:0">請求対象(未請求) ${dueRows.length > 0 ? `<span class="badge badge-warning">${dueRows.length}件</span>` : ''}</h3>
+        <button class="btn btn-sm btn-primary" id="btn-bulk-create" ${dueRows.length === 0 ? 'disabled' : ''}>選択した請求書をまとめて作成</button>
+      </div>
       <table class="data-table">
         <thead>
           <tr>
+            <th style="width:24px"><input type="checkbox" id="f-select-all" ${dueRows.length === 0 ? 'disabled' : ''} /></th>
             <th>利用者</th>
             <th>区分</th>
             <th>請求対象期間</th>
@@ -99,11 +135,12 @@ export function renderInvoicesPage(root: HTMLElement) {
         <tbody id="due-rows">
           ${
             dueRows.length === 0
-              ? `<tr class="empty-row"><td colspan="4">基準月時点で新たに請求すべきサイクルはありません。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="5">基準月時点で新たに請求すべきサイクルはありません。</td></tr>`
               : dueRows
                   .map(
-                    (r) => `
+                    (r, idx) => `
               <tr>
+                <td><input type="checkbox" class="js-due-check" data-index="${idx}" /></td>
                 <td>${escapeHtml(r.clientName)}</td>
                 <td>${BILLING_TYPE_LABELS[r.category]}</td>
                 <td>${formatYmJapanese(r.cycleStartMonth)} 〜 ${formatYmJapanese(r.cycleEndMonth)}</td>
@@ -117,6 +154,35 @@ export function renderInvoicesPage(root: HTMLElement) {
           }
         </tbody>
       </table>
+      <details class="inv-detail-toggle" style="margin-top:16px">
+        <summary>この一覧に表示されない利用者を確認</summary>
+        <table class="data-table" style="margin-top:12px">
+          <thead>
+            <tr>
+              <th>利用者</th>
+              <th>状態</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              clients.length === 0
+                ? `<tr class="empty-row"><td colspan="2">利用者が登録されていません。</td></tr>`
+                : [...clients]
+                    .filter((c) => !dueRows.some((r) => r.clientId === c.id))
+                    .sort((a, b) => a.kana.localeCompare(b.kana, 'ja'))
+                    .map(
+                      (c) => `
+                <tr>
+                  <td>${escapeHtml(c.name)}${c.active ? '' : ' <span class="badge badge-muted">終了/休止</span>'}</td>
+                  <td>${escapeHtml(clientDueStatusLabel(c, usageEntries, invoices, referenceMonth))}</td>
+                </tr>
+              `
+                    )
+                    .join('')
+            }
+          </tbody>
+        </table>
+      </details>
     </div>
 
     <div class="card">
@@ -224,13 +290,14 @@ export function renderInvoicesPage(root: HTMLElement) {
     clientId: string,
     cycleStartMonth: string,
     farReference: string,
-    category: BillingType
-  ) {
+    category: BillingType,
+    navigateAfter = true
+  ): Invoice | null {
     const client = clients.find((c) => c.id === clientId);
-    if (!client) return;
+    if (!client) return null;
     const cycles = getClientCycles(client, usageEntries, invoices, farReference);
     const cycle = cycles.find((c) => c.cycleStartMonth === cycleStartMonth);
-    if (!cycle) return;
+    if (!cycle) return null;
     const { months, adjustments, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(
       cycle,
       usageEntries,
@@ -255,7 +322,8 @@ export function renderInvoicesPage(root: HTMLElement) {
       createdAt: new Date().toISOString(),
     };
     store.saveInvoice(invoice);
-    navigate(`invoices/${invoice.id}`);
+    if (navigateAfter) navigate(`invoices/${invoice.id}`);
+    return invoice;
   }
 
   root.querySelector('#due-rows')?.addEventListener('click', (e) => {
@@ -267,6 +335,31 @@ export function renderInvoicesPage(root: HTMLElement) {
       referenceMonth,
       btn.dataset.category as BillingType
     );
+  });
+
+  const selectAllCheckbox = root.querySelector('#f-select-all') as HTMLInputElement | null;
+  selectAllCheckbox?.addEventListener('change', () => {
+    root.querySelectorAll('.js-due-check').forEach((el) => {
+      (el as HTMLInputElement).checked = selectAllCheckbox.checked;
+    });
+  });
+
+  root.querySelector('#btn-bulk-create')?.addEventListener('click', async () => {
+    const checked = Array.from(root.querySelectorAll('.js-due-check:checked')) as HTMLInputElement[];
+    if (checked.length === 0) {
+      await showAlert('請求書を作成する行にチェックを入れてください。');
+      return;
+    }
+    if (!(await showConfirm(`選択した${checked.length}件の請求書をまとめて作成します。よろしいですか?`))) return;
+    let created = 0;
+    for (const cb of checked) {
+      const row = dueRows[Number(cb.dataset.index)];
+      if (!row) continue;
+      const invoice = createInvoiceForCycle(row.clientId, row.cycleStartMonth, referenceMonth, row.category, false);
+      if (invoice) created++;
+    }
+    await showAlert(`${created}件の請求書を作成しました(下書き)。内容は「請求書一覧」から確認できます。`);
+    renderInvoicesPage(root);
   });
 
   const earlyClientSelect = root.querySelector('#f-early-client') as HTMLSelectElement;
