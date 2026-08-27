@@ -24,5 +24,5 @@ echo "(このパソコンをサーバーにします。他のパソコンから�
 echo "終了するときは、このウィンドウを閉じるか Ctrl+C を押してください。"
 echo ""
 
-( sleep 6 && open http://localhost:4000/ ) &
+open "$(pwd)/loading.html"
 npm run start

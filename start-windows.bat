@@ -25,6 +25,6 @@ echo (このパソコンをサーバーにします。他のパソコンから�
 echo 終了するときは、このウィンドウを閉じてください。
 echo.
 
-start "" open-browser.bat
+start "" loading.html
 call npm run start
 pause

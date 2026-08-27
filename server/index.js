@@ -11,6 +11,12 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 
+// 起動時の loading.html (file:// で開かれる) から準備完了チェックのfetchができるようCORSを許可する
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  next();
+});
+
 // --- SSE: どこかでデータが変更されたら接続中のブラウザ全員に知らせる ---
 const sseClients = new Set();
 

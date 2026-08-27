@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>起動中... - 販売管理ソフト</title>
+    <style>
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f4f6f4;
+        font-family: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', system-ui, sans-serif;
+        color: #22301f;
+      }
+      .box {
+        text-align: center;
+      }
+      .spinner {
+        width: 40px;
+        height: 40px;
+        margin: 0 auto 20px;
+        border: 4px solid #dfe4de;
+        border-top-color: #2f6f4f;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      p {
+        font-size: 14px;
+        color: #6b7568;
+        margin: 4px 0;
+      }
+      .title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #22301f;
+        margin-bottom: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <div class="spinner"></div>
+      <div class="title">販売管理ソフトを起動しています</div>
+      <p id="status">準備ができるまでこのままお待ちください…</p>
+    </div>
+    <script>
+      var statusEl = document.getElementById('status');
+      var attempts = 0;
+      function check() {
+        attempts++;
+        fetch('http://localhost:4000/api/company', { cache: 'no-store' })
+          .then(function (res) {
+            if (res.ok) {
+              location.href = 'http://localhost:4000/';
+            } else {
+              retry();
+            }
+          })
+          .catch(retry);
+      }
+      function retry() {
+        if (attempts > 40) {
+          statusEl.textContent = '起動に時間がかかっています。黒い画面にエラーが出ていないか確認してください。';
+        }
+        setTimeout(check, 1000);
+      }
+      check();
+    </script>
+  </body>
+</html>
