@@ -1,9 +1,61 @@
 # データ設計・仕様メモ
 
 このアプリはフレームワークを使わない vanilla TypeScript + Vite 構成です。
-状態は `src/store.ts` の `Store` クラスが一元管理し、`localStorage`
-(キー: `care-rental-billing-v1`)に丸ごと JSON で保存します。サーバーは
-ありません。
+状態は `src/store.ts` の `Store` クラスが一元管理します。
+
+## データ保存先(Supabase)
+
+複数のパソコンから同じデータを共有できるようにするため、状態は
+ブラウザの `localStorage` ではなく、Supabase(共有のPostgresデータベース)
+に保存する。接続先は `src/supabaseClient.ts` に設定した Project URL と
+`sb_publishable_...` キー(ブラウザに組み込む前提の公開用キー。旧来の
+`anon` JWTキーに相当し、`sb_secret_...`/`service_role`のような管理者権限
+キーとは違い、Row Level Securityの範囲でしか操作できない)。テーブル定義・
+RLSポリシーは [`supabase/schema.sql`](./supabase/schema.sql) にまとめてあり、
+Supabaseダッシュボードの SQL Editor で実行してセットアップする。今回は
+「URLを知っていれば誰でも見れる」という運用方針のため、全テーブルで
+匿名キーからの読み書きを許可するポリシーにしている(制限をかけたく
+なった場合は、ここのポリシーを見直せばよい)。
+
+`src/store.ts` の設計方針:
+
+- 各エンティティ(利用者・品目・利用実績・請求書・変更履歴・月遅れ調整・
+  会社設定)ごとに、DB(snake_case)⇔ドメイン型(camelCase)の変換関数を
+  用意している(例: `clientFromDb`/`clientToDb`)
+- 書き込み系メソッド(`upsertClient`など)は、**ローカルの状態をすぐ更新して
+  `notify()`で再描画** → **裏でSupabaseへの書き込みを`void`で発火**、という
+  楽観的更新にしている。これにより、これまで通り呼び出し側は同期的に
+  `store.upsertClient(...)`のように呼ぶだけでよく、既存のページ側コードを
+  ほぼ変更せずに済んでいる。Supabase側の書き込みが失敗した場合は
+  コンソールにエラーを出すのみで、UIの操作はブロックしない
+- `deleteClient`は、関連する利用実績・請求書・変更履歴・月遅れ調整も
+  ローカル/Supabase側ともに合わせて削除する(DB側の外部キーCASCADEには
+  頼らず、明示的に複数テーブルへdeleteを発行している)
+- 品目マスタ(`items`テーブル)が空の状態(=初回セットアップ直後)で
+  読み込んだ場合は、`DEFAULT_ITEMS`をSupabase側にも1回だけ投入する
+
+他のパソコンでの変更をどう取り込むか(常時ポーリングはしていない):
+
+- アプリ起動時に一度Supabaseから全データを取得する(`Store`のコンストラクタ)
+- 実際の画面遷移(URLのhashが変わった時。書き込み後の再描画用に発火する
+  合成の`hashchange`イベントとは`src/main.ts`側で区別している)のたびに
+  `store.refreshNow()`で再取得する
+- ブラウザタブ/ウィンドウにフォーカスが戻ったタイミング(`focus`・
+  `visibilitychange`)でも再取得する
+- 常時タイマーでポーリングしていないのは、利用実績入力中(`usage.ts`の
+  入力タブなど)に画面がまるごと再描画されて入力中の内容が消えてしまう
+  事故を避けるため。同じ画面に長時間とどまったまま他のパソコンの変更を
+  待っていると、画面遷移か再フォーカスをするまで反映されない点は
+  トレードオフとして許容している
+
+## GitHub Pagesへの公開
+
+ClaudeのArtifact機能に依存せず、恒久的な固定URLで誰でもアクセスできる
+ようにするため、`.github/workflows/deploy-pages.yml`で
+`claude/care-rental-billing-software-elxel6`ブランチへのpush時に
+自動ビルド・GitHub Pagesへの公開を行うようにした。リポジトリ側で
+「Settings → Pages → Source」を「GitHub Actions」に設定する必要がある
+(初回のみ手動設定)。
 
 ## 画面構成(`src/ui/pages/*.ts`)
 
