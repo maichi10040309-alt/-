@@ -15,6 +15,7 @@ import { buildInvoiceMonths, cycleStartForMonth, getClientCycles, type BillingCy
 import { navigate } from '@/ui/router';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { openModal } from '@/ui/components/modal';
+import { clientStatusBadge } from '@/ui/pages/clients';
 
 const COMPACT_COPAY_LABELS: Record<CopayRatio, string> = {
   '1': '1割',
@@ -181,7 +182,7 @@ export function renderInvoicesPage(root: HTMLElement) {
                     .map(
                       (c) => `
                 <tr>
-                  <td>${escapeHtml(c.name)}${c.active ? '' : ' <span class="badge badge-muted">終了/休止</span>'}</td>
+                  <td>${escapeHtml(c.name)}${c.status === 'active' ? '' : ' ' + clientStatusBadge(c.status)}</td>
                   <td>${escapeHtml(clientDueStatusLabel(c, usageEntries, invoices, referenceMonth))}</td>
                 </tr>
               `

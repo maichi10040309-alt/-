@@ -8,7 +8,7 @@ export function renderDashboardPage(root: HTMLElement) {
   const { clients, usageEntries, invoices, lateAdjustments, items } = store.getState();
   const thisMonth = currentYearMonth();
 
-  const activeClients = clients.filter((c) => c.active);
+  const activeClients = clients.filter((c) => c.status === 'active');
 
   let dueCount = 0;
   let dueAmount = 0;

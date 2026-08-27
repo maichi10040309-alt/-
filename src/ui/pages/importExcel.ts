@@ -200,7 +200,7 @@ function commitImport(result: ImportResult, targetMonth: string) {
         careOfficeName: imported.careOfficeName,
         careManagerName: imported.careManagerName,
         salesRepName: '',
-        active: true,
+        status: 'active',
         note: '',
       };
       store.upsertClient(newClient);

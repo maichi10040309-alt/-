@@ -1,10 +1,11 @@
 import { store, newId } from '@/store';
 import type { TaxCategory, UsageEntry } from '@/types';
-import { TAX_CATEGORY_LABELS, copayYenPerUnit } from '@/types';
+import { CLIENT_STATUS_LABELS, TAX_CATEGORY_LABELS, copayYenPerUnit } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { addMonths, currentYearMonth, formatYmJapanese } from '@/utils/date';
 import { openImportModal } from '@/ui/pages/importExcel';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
+import { clientStatusBadge } from '@/ui/pages/clients';
 
 interface DraftRow {
   itemId: string;
@@ -163,7 +164,7 @@ function renderListRows(
     return `
       <tr>
         <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
-        <td>${c.active ? '<span class="badge badge-success">利用中</span>' : '<span class="badge badge-muted">終了</span>'}</td>
+        <td>${clientStatusBadge(c.status)}</td>
         <td>${entries.length > 0 ? '<span class="badge badge-success">入力済み</span>' : '<span class="badge badge-warning">未入力</span>'}</td>
         <td class="num">${insuranceEntries.length}</td>
         <td class="num">${formatYen(insuranceTotal)}</td>
@@ -213,7 +214,7 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
               ${sortedClients
                 .map(
                   (c) =>
-                    `<option value="${c.id}" ${c.id === selectedClientId ? 'selected' : ''}>${escapeHtml(c.name)}${c.active ? '' : '(終了)'}</option>`
+                    `<option value="${c.id}" ${c.id === selectedClientId ? 'selected' : ''}>${escapeHtml(c.name)}${c.status === 'active' ? '' : `(${CLIENT_STATUS_LABELS[c.status]})`}</option>`
                 )
                 .join('')}
             </select>

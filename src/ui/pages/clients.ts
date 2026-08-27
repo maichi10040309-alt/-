@@ -1,6 +1,12 @@
 import { store, newId } from '@/store';
-import type { Client, ClientEvent, ClientEventType, CopayRatio, Invoice, PaymentMethod } from '@/types';
-import { CLIENT_EVENT_TYPE_LABELS, COPAY_RATIO_LABELS, INVOICE_BILLING_CATEGORY_LABELS, PAYMENT_METHOD_LABELS } from '@/types';
+import type { Client, ClientEvent, ClientEventType, ClientStatus, CopayRatio, Invoice, PaymentMethod } from '@/types';
+import {
+  CLIENT_EVENT_TYPE_LABELS,
+  CLIENT_STATUS_LABELS,
+  COPAY_RATIO_LABELS,
+  INVOICE_BILLING_CATEGORY_LABELS,
+  PAYMENT_METHOD_LABELS,
+} from '@/types';
 import { escapeHtml } from '@/utils/format';
 import { openModal } from '@/ui/components/modal';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
@@ -121,6 +127,16 @@ function latestInvoiceCellHtml(clientId: string, invoices: Invoice[]): string {
     .join('');
 }
 
+const CLIENT_STATUS_BADGE_CLASS: Record<ClientStatus, string> = {
+  active: 'badge-success',
+  paused: 'badge-warning',
+  ended: 'badge-muted',
+};
+
+export function clientStatusBadge(status: ClientStatus): string {
+  return `<span class="badge ${CLIENT_STATUS_BADGE_CLASS[status]}">${CLIENT_STATUS_LABELS[status]}</span>`;
+}
+
 function rowHtml(c: Client, invoices: Invoice[]): string {
   return `
     <tr>
@@ -130,7 +146,7 @@ function rowHtml(c: Client, invoices: Invoice[]): string {
       <td>${c.paymentMethod === 'cash' ? '<span class="badge badge-muted">都度現金</span>' : '4か月ごと'}</td>
       <td>${escapeHtml(c.careManagerName)}</td>
       <td>${escapeHtml(c.salesRepName)}</td>
-      <td>${c.active ? '<span class="badge badge-success">利用中</span>' : '<span class="badge badge-muted">終了</span>'}</td>
+      <td>${clientStatusBadge(c.status)}</td>
       <td>${latestInvoiceCellHtml(c.id, invoices)}</td>
       <td class="actions-cell">
         <button class="btn-link js-edit" data-id="${c.id}">編集</button>
@@ -156,7 +172,7 @@ function openClientModal(existing?: Client) {
     careOfficeName: '',
     careManagerName: '',
     salesRepName: '',
-    active: true,
+    status: 'active',
     note: '',
   };
 
@@ -220,9 +236,10 @@ function openClientModal(existing?: Client) {
       </div>
       <div class="form-field">
         <label>状態</label>
-        <select id="f-active">
-          <option value="true" ${c.active ? 'selected' : ''}>利用中</option>
-          <option value="false" ${!c.active ? 'selected' : ''}>終了</option>
+        <select id="f-status">
+          ${(Object.keys(CLIENT_STATUS_LABELS) as ClientStatus[])
+            .map((s) => `<option value="${s}" ${s === c.status ? 'selected' : ''}>${CLIENT_STATUS_LABELS[s]}</option>`)
+            .join('')}
         </select>
       </div>
       <div class="form-field full">
@@ -263,7 +280,7 @@ function openClientModal(existing?: Client) {
       careOfficeName: (box.querySelector('#f-careOffice') as HTMLInputElement).value.trim(),
       careManagerName: (box.querySelector('#f-careManager') as HTMLInputElement).value.trim(),
       salesRepName: (box.querySelector('#f-salesRep') as HTMLInputElement).value.trim(),
-      active: (box.querySelector('#f-active') as HTMLSelectElement).value === 'true',
+      status: (box.querySelector('#f-status') as HTMLSelectElement).value as ClientStatus,
       note: (box.querySelector('#f-note') as HTMLTextAreaElement).value.trim(),
     };
     store.upsertClient(updated);

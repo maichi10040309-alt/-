@@ -4,6 +4,7 @@ import type {
   Client,
   ClientEvent,
   ClientEventType,
+  ClientStatus,
   CompanySettings,
   CopayRatio,
   Invoice,
@@ -62,7 +63,7 @@ function clientFromDb(r: Record<string, unknown>): Client {
     careOfficeName: r.care_office_name as string,
     careManagerName: r.care_manager_name as string,
     salesRepName: r.sales_rep_name as string,
-    active: r.active as boolean,
+    status: r.status as ClientStatus,
     note: r.note as string,
   };
 }
@@ -79,7 +80,7 @@ function clientToDb(c: Client) {
     care_office_name: c.careOfficeName,
     care_manager_name: c.careManagerName,
     sales_rep_name: c.salesRepName,
-    active: c.active,
+    status: c.status,
     note: c.note,
   };
 }

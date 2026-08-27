@@ -26,6 +26,16 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: '都度現金',
 };
 
+// 'active' = 利用中/'paused' = 休止中(一時的にレンタルを止めているが契約自体は継続)/
+// 'ended' = 終了(契約終了)
+export type ClientStatus = 'active' | 'paused' | 'ended';
+
+export const CLIENT_STATUS_LABELS: Record<ClientStatus, string> = {
+  active: '利用中',
+  paused: '休止中',
+  ended: '終了',
+};
+
 export interface Client {
   id: string;
   name: string; // 利用者名
@@ -38,7 +48,7 @@ export interface Client {
   careOfficeName: string; // 居宅介護支援事業所
   careManagerName: string; // 担当ケアマネジャー
   salesRepName: string; // 営業担当者
-  active: boolean; // 現在レンタル中かどうか
+  status: ClientStatus;
   note: string;
 }
 

@@ -15,7 +15,7 @@ create table if not exists clients (
   care_office_name text not null default '',
   care_manager_name text not null default '',
   sales_rep_name text not null default '',
-  active boolean not null default true,
+  status text not null default 'active',
   note text not null default ''
 );
 
