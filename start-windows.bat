@@ -25,6 +25,6 @@ echo (このパソコンをサーバーにします。他のパソコンから�
 echo 終了するときは、このウィンドウを閉じてください。
 echo.
 
-start "" cmd /c "ping -n 7 127.0.0.1 >nul && start http://localhost:4000/"
+start "" open-browser.bat
 call npm run start
 pause
