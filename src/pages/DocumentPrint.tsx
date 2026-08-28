@@ -26,8 +26,23 @@ export default function DocumentPrint() {
   const isConsolidated = docType === 'consolidated_invoice';
   const needsStamp = isReceipt && totals.grandTotal >= 50000;
 
+  // 既定の帳票用紙に合わせた用紙サイズ・余白を適用する
+  // 納品書: FSC認証プリンタ帳票用紙マルチタイプ 白紙/2分割・4穴(ミシン目切離し後 タテ148.5×ヨコ210mm)
+  // 請求書: ヒサゴ 請求書 1面2穴 インボイス対応 A4(ヨコ210×タテ297mm)
+  // 穴の正確な位置は用紙により異なるため、日本の2穴パンチJIS規格(穴中心が端から12mm、
+  // 穴径6mm)を目安に左端へ安全マージンを確保している。実機で試し印刷し必要に応じ調整すること。
+  const paperClass =
+    docType === 'delivery' ? 'print-page-delivery' : docType === 'invoice' ? 'print-page-invoice' : '';
+  const pageCss =
+    docType === 'delivery'
+      ? '@page { size: 210mm 148.5mm; margin: 8mm 10mm 8mm 20mm; }'
+      : docType === 'invoice'
+        ? '@page { size: 210mm 297mm; margin: 15mm 15mm 15mm 22mm; }'
+        : null;
+
   return (
     <div>
+      {pageCss && <style>{pageCss}</style>}
       <div className="print-toolbar no-print">
         <button className="btn btn-secondary" onClick={() => navigate(-1)}>
           戻る
@@ -37,7 +52,7 @@ export default function DocumentPrint() {
         </button>
       </div>
 
-      <div className="print-sheet">
+      <div className={`print-sheet ${paperClass}`}>
         <h1 className="print-title">{label}</h1>
 
         <div className="print-top-row">

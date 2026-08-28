@@ -669,6 +669,80 @@ textarea:focus {
   color: var(--color-danger);
 }
 
+/*
+ * 既定の帳票用紙に合わせた用紙サイズ・余白調整
+ * ・納品書: FSC認証プリンタ帳票用紙マルチタイプ 白紙/2分割・4穴
+ *   (ミシン目切り離し後 タテ148.5×ヨコ210mm、横長)
+ * ・請求書: ヒサゴ 請求書 1面2穴 インボイス対応 A4(ヨコ210×タテ297mm)
+ * 穴の正確な位置は用紙により異なるため、日本の2穴パンチJIS規格
+ * (穴中心が端から12mm、穴径6mm)を目安に、左端に安全マージンを確保している。
+ * 実機で試し印刷し、必要に応じて余白を微調整すること。
+ */
+.print-page-delivery.print-sheet {
+  max-width: 700px;
+}
+
+.print-page-delivery .print-title {
+  font-size: 16px;
+  letter-spacing: 0.2em;
+  margin: 0 0 10px;
+}
+
+.print-page-delivery .print-top-row {
+  margin-bottom: 10px;
+}
+
+.print-page-delivery .print-customer-name {
+  font-size: 14px;
+  padding-bottom: 3px;
+  margin-bottom: 4px;
+}
+
+.print-page-delivery .print-doc-title {
+  font-size: 11px;
+}
+
+.print-page-delivery .print-meta-block {
+  width: 220px;
+}
+
+.print-page-delivery .print-meta-table th,
+.print-page-delivery .print-meta-table td {
+  padding: 2px 6px;
+  font-size: 10.5px;
+}
+
+.print-page-delivery .print-items-table {
+  margin: 8px 0;
+  font-size: 11px;
+}
+
+.print-page-delivery .print-items-table th,
+.print-page-delivery .print-items-table td {
+  padding: 3px 6px;
+}
+
+.print-page-delivery .print-totals-row {
+  margin-bottom: 8px;
+}
+
+.print-page-delivery .totals-box {
+  font-size: 11px;
+  max-width: 260px;
+}
+
+.print-page-delivery .print-notes,
+.print-page-delivery .print-bank-info {
+  margin: 8px 0;
+  font-size: 11px;
+}
+
+.print-page-delivery .print-company-block {
+  margin-top: 8px;
+  padding-top: 6px;
+  font-size: 10px;
+}
+
 @media print {
   .no-print,
   .sidebar {
@@ -685,6 +759,14 @@ textarea:focus {
   }
   body {
     background: white;
+  }
+
+  /* 既定の用紙サイズ(A4)。納品書・請求書ごとの実際のサイズはDocumentPrint.tsxが
+     <style>で個別に@pageルールを差し込んで上書きする(名前付きページはブラウザの
+     PDF出力エンジンで無視されることがあるため、ページ単位のインラインstyleで確実に適用する) */
+  @page {
+    size: A4;
+    margin: 15mm;
   }
 }
 
