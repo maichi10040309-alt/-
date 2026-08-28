@@ -3,6 +3,7 @@ import { useLiveQuery } from '../api/useLiveQuery';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
+import SelectionToolbar from '../components/SelectionToolbar';
 import { DOCUMENT_STATUS_LABEL, DOCUMENT_TYPE_LABEL, type DocumentType } from '../types';
 import { calcDocumentTotals } from '../utils/tax';
 import { formatMoney, formatDateJa } from '../utils/format';
@@ -17,6 +18,7 @@ export default function DocumentList() {
   const customers = useLiveQuery(() => api.customers.list(), []);
   const documents = useLiveQuery(() => api.documents.listByType(docType), [docType]);
   const [keyword, setKeyword] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const customerMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -35,6 +37,51 @@ export default function DocumentList() {
         (customerMap.get(d.customerId) ?? '').toLowerCase().includes(kw),
     );
   }, [documents, keyword, customerMap]);
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((d) => selected.has(d.id));
+  const toggleAll = () => {
+    setSelected((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        filtered.forEach((d) => next.delete(d.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filtered.forEach((d) => next.add(d.id));
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!confirm(`選択した${selected.size}件の${label}を削除します。よろしいですか?`)) return;
+    await api.documents.bulkDelete(Array.from(selected));
+    setSelected(new Set());
+  };
+
+  const handleDeleteAll = async () => {
+    if (!documents || documents.length === 0) return;
+    if (!confirm(`${label}を全${documents.length}件削除します。この操作は元に戻せません。よろしいですか?`)) return;
+    await api.documents.bulkDelete(documents.map((d) => d.id));
+    setSelected(new Set());
+  };
+
+  const handlePrintAll = () => {
+    if (!documents || documents.length === 0) return;
+    navigate(`/documents/${docType}/print-batch?ids=${documents.map((d) => d.id).join(',')}`);
+  };
+
+  const handlePrintSelected = () => {
+    navigate(`/documents/${docType}/print-batch?ids=${Array.from(selected).join(',')}`);
+  };
 
   return (
     <div>
@@ -62,10 +109,32 @@ export default function DocumentList() {
           </>
         }
       />
+      <SelectionToolbar
+        totalCount={documents?.length ?? 0}
+        selectedCount={selected.size}
+        onDeleteSelected={handleDeleteSelected}
+        onDeleteAll={handleDeleteAll}
+        deleteAllLabel={`すべて削除(${documents?.length ?? 0}件)`}
+        extraActions={
+          <>
+            <button className="btn btn-secondary" onClick={handlePrintAll}>
+              全{documents?.length ?? 0}件を印刷
+            </button>
+            {selected.size > 0 && (
+              <button className="btn btn-secondary" onClick={handlePrintSelected}>
+                選択した{selected.size}件を印刷
+              </button>
+            )}
+          </>
+        }
+      />
       <div className="card">
         <table className="data-table">
           <thead>
             <tr>
+              <th className="select-col">
+                <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} />
+              </th>
               <th>番号</th>
               <th>発行日</th>
               <th>得意先</th>
@@ -80,6 +149,9 @@ export default function DocumentList() {
               const totals = calcDocumentTotals(d.items, company?.taxRounding ?? 'floor');
               return (
                 <tr key={d.id}>
+                  <td className="select-col">
+                    <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggle(d.id)} />
+                  </td>
                   <td>{d.number}</td>
                   <td>{formatDateJa(d.issueDate)}</td>
                   <td>{customerMap.get(d.customerId) ?? '(不明)'}</td>
@@ -103,7 +175,7 @@ export default function DocumentList() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty-row">
+                <td colSpan={8} className="empty-row">
                   {label}が登録されていません。
                 </td>
               </tr>

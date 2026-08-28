@@ -108,6 +108,19 @@ function makeCollection(name, sortByCode) {
       persist();
       return true;
     },
+    removeMany(ids) {
+      const idSet = new Set(ids);
+      const before = state[name].length;
+      state[name] = state[name].filter((r) => !idSet.has(r.id));
+      persist();
+      return before - state[name].length;
+    },
+    removeAll() {
+      const count = state[name].length;
+      state[name] = [];
+      persist();
+      return count;
+    },
     count() {
       return state[name].length;
     },

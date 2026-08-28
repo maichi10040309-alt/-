@@ -9,6 +9,7 @@ import ProductEdit from './pages/ProductEdit';
 import DocumentList from './pages/DocumentList';
 import DocumentEdit from './pages/DocumentEdit';
 import DocumentPrint from './pages/DocumentPrint';
+import DocumentPrintBatch from './pages/DocumentPrintBatch';
 import BillingRun from './pages/BillingRun';
 import Receivables from './pages/Receivables';
 import Reports from './pages/Reports';
@@ -62,6 +63,7 @@ function App() {
           <Route path="/products" element={<ProductList />} />
           <Route path="/products/:id" element={<ProductEdit />} />
           <Route path="/documents/:type" element={<DocumentList />} />
+          <Route path="/documents/:type/print-batch" element={<DocumentPrintBatch />} />
           <Route path="/documents/:type/:id" element={<DocumentEdit />} />
           <Route path="/documents/:type/:id/print" element={<DocumentPrint />} />
           <Route path="/billing" element={<BillingRun />} />

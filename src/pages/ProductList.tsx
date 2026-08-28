@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import CsvImportButton, { type MappedValue } from '../components/CsvImportButton';
+import SelectionToolbar from '../components/SelectionToolbar';
 import { toCSV, downloadCSV } from '../utils/csv';
 import { newId } from '../utils/id';
 import { formatMoney, todayISO } from '../utils/format';
@@ -39,6 +40,7 @@ const IMPORT_FIELDS: ImportFieldDef[] = [
 export default function ProductList() {
   const products = useLiveQuery(() => api.products.list(), []);
   const [keyword, setKeyword] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     if (!products) return [];
@@ -95,6 +97,42 @@ export default function ProductList() {
     await api.products.bulkPut(records);
   };
 
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
+  const toggleAll = () => {
+    setSelected((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        filtered.forEach((p) => next.delete(p.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filtered.forEach((p) => next.add(p.id));
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!confirm(`選択した${selected.size}件の商品を削除します。よろしいですか?`)) return;
+    await api.products.bulkDelete(Array.from(selected));
+    setSelected(new Set());
+  };
+
+  const handleDeleteAll = async () => {
+    if (!products || products.length === 0) return;
+    if (!confirm(`商品を全${products.length}件削除します。この操作は元に戻せません。よろしいですか?`)) return;
+    await api.products.deleteAll();
+    setSelected(new Set());
+  };
+
   return (
     <div>
       <PageHeader
@@ -119,10 +157,19 @@ export default function ProductList() {
           </>
         }
       />
+      <SelectionToolbar
+        totalCount={products?.length ?? 0}
+        selectedCount={selected.size}
+        onDeleteSelected={handleDeleteSelected}
+        onDeleteAll={handleDeleteAll}
+      />
       <div className="card">
         <table className="data-table">
           <thead>
             <tr>
+              <th className="select-col">
+                <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} />
+              </th>
               <th>コード</th>
               <th>商品名</th>
               <th>分類</th>
@@ -137,6 +184,9 @@ export default function ProductList() {
           <tbody>
             {filtered.map((p) => (
               <tr key={p.id}>
+                <td className="select-col">
+                  <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
+                </td>
                 <td>{p.code}</td>
                 <td>{p.name}</td>
                 <td>{p.category}</td>
@@ -154,7 +204,7 @@ export default function ProductList() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="empty-row">
+                <td colSpan={10} className="empty-row">
                   商品が登録されていません。
                 </td>
               </tr>

@@ -9,6 +9,8 @@ function makeCollection<T extends { id: string }>(path: string) {
     patch: (id: string, patch: Partial<T>) => http.patch<T>(`/api/${path}/${id}`, patch),
     delete: (id: string) => http.del<{ ok: true }>(`/api/${path}/${id}`),
     bulkPut: (records: T[]) => http.post<{ count: number }>(`/api/${path}/bulk`, records),
+    bulkDelete: (ids: string[]) => http.post<{ count: number }>(`/api/${path}/bulk-delete`, { ids }),
+    deleteAll: () => http.del<{ count: number }>(`/api/${path}`),
   };
 }
 
@@ -32,7 +34,15 @@ export const api = {
       http.post<{ codes: string[] }>('/api/products/next-code-batch', { count }).then((r) => r.codes),
   },
   documents: {
-    ...documentsCollection,
+    // deleteAll は種別をまたいで全伝票を消してしまうため公開しない。
+    // 種別ごとの「すべて削除」は一覧で取得したidを bulkDelete に渡す形で行う。
+    list: documentsCollection.list,
+    get: documentsCollection.get,
+    put: documentsCollection.put,
+    patch: documentsCollection.patch,
+    delete: documentsCollection.delete,
+    bulkPut: documentsCollection.bulkPut,
+    bulkDelete: documentsCollection.bulkDelete,
     listByType: (type: DocumentType) =>
       http.get<SalesDocument[]>(`/api/documents?type=${encodeURIComponent(type)}`),
     issueNumber: (type: DocumentType, issueDate: string) =>

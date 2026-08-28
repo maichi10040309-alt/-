@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import CsvImportButton, { type MappedValue } from '../components/CsvImportButton';
+import SelectionToolbar from '../components/SelectionToolbar';
 import { toCSV, downloadCSV } from '../utils/csv';
 import { newId } from '../utils/id';
 import { todayISO } from '../utils/format';
@@ -51,6 +52,7 @@ const IMPORT_FIELDS: ImportFieldDef[] = [
 export default function CustomerList() {
   const customers = useLiveQuery(() => api.customers.list(), []);
   const [keyword, setKeyword] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     if (!customers) return [];
@@ -122,6 +124,42 @@ export default function CustomerList() {
     await api.customers.bulkPut(records);
   };
 
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((c) => selected.has(c.id));
+  const toggleAll = () => {
+    setSelected((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        filtered.forEach((c) => next.delete(c.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filtered.forEach((c) => next.add(c.id));
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!confirm(`選択した${selected.size}件の得意先を削除します。よろしいですか?`)) return;
+    await api.customers.bulkDelete(Array.from(selected));
+    setSelected(new Set());
+  };
+
+  const handleDeleteAll = async () => {
+    if (!customers || customers.length === 0) return;
+    if (!confirm(`得意先を全${customers.length}件削除します。この操作は元に戻せません。よろしいですか?`)) return;
+    await api.customers.deleteAll();
+    setSelected(new Set());
+  };
+
   return (
     <div>
       <PageHeader
@@ -146,10 +184,19 @@ export default function CustomerList() {
           </>
         }
       />
+      <SelectionToolbar
+        totalCount={customers?.length ?? 0}
+        selectedCount={selected.size}
+        onDeleteSelected={handleDeleteSelected}
+        onDeleteAll={handleDeleteAll}
+      />
       <div className="card">
         <table className="data-table">
           <thead>
             <tr>
+              <th className="select-col">
+                <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} />
+              </th>
               <th>コード</th>
               <th>得意先名</th>
               <th>フリガナ</th>
@@ -163,6 +210,9 @@ export default function CustomerList() {
           <tbody>
             {filtered.map((c) => (
               <tr key={c.id}>
+                <td className="select-col">
+                  <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
+                </td>
                 <td>{c.code}</td>
                 <td>{c.name}</td>
                 <td>{c.kana}</td>
@@ -179,7 +229,7 @@ export default function CustomerList() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty-row">
+                <td colSpan={9} className="empty-row">
                   得意先が登録されていません。
                 </td>
               </tr>

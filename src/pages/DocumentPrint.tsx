@@ -1,10 +1,9 @@
 import { useLiveQuery } from '../api/useLiveQuery';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { calcDocumentTotals } from '../utils/tax';
-import { formatDateJa, formatMoney } from '../utils/format';
-import { DOCUMENT_TYPE_LABEL, type DocumentType } from '../types';
-import TotalsBox from '../components/TotalsBox';
+import type { DocumentType } from '../types';
+import DocumentPrintSheet from '../components/DocumentPrintSheet';
+import { getPaperCss } from '../utils/printPaper';
 
 export default function DocumentPrint() {
   const { type, id } = useParams<{ type: DocumentType; id: string }>();
@@ -20,25 +19,7 @@ export default function DocumentPrint() {
 
   if (!doc || !company) return <div className="card">読み込み中...</div>;
 
-  const totals = calcDocumentTotals(doc.items, company.taxRounding);
-  const label = DOCUMENT_TYPE_LABEL[docType];
-  const isReceipt = docType === 'receipt';
-  const isConsolidated = docType === 'consolidated_invoice';
-  const needsStamp = isReceipt && totals.grandTotal >= 50000;
-
-  // 既定の帳票用紙に合わせた用紙サイズ・余白を適用する
-  // 納品書: FSC認証プリンタ帳票用紙マルチタイプ 白紙/2分割・4穴(ミシン目切離し後 タテ148.5×ヨコ210mm)
-  // 請求書: ヒサゴ 請求書 1面2穴 インボイス対応 A4(ヨコ210×タテ297mm)
-  // 穴の正確な位置は用紙により異なるため、日本の2穴パンチJIS規格(穴中心が端から12mm、
-  // 穴径6mm)を目安に左端へ安全マージンを確保している。実機で試し印刷し必要に応じ調整すること。
-  const paperClass =
-    docType === 'delivery' ? 'print-page-delivery' : docType === 'invoice' ? 'print-page-invoice' : '';
-  const pageCss =
-    docType === 'delivery'
-      ? '@page { size: 210mm 148.5mm; margin: 8mm 10mm 8mm 20mm; }'
-      : docType === 'invoice'
-        ? '@page { size: 210mm 297mm; margin: 15mm 15mm 15mm 22mm; }'
-        : null;
+  const pageCss = getPaperCss(docType);
 
   return (
     <div>
@@ -52,149 +33,7 @@ export default function DocumentPrint() {
         </button>
       </div>
 
-      <div className={`print-sheet ${paperClass}`}>
-        <h1 className="print-title">{label}</h1>
-
-        <div className="print-top-row">
-          <div className="print-customer-block">
-            <div className="print-customer-name">{customer?.name ?? '(得意先未設定)'} 様</div>
-            {doc.title && <div className="print-doc-title">件名: {doc.title}</div>}
-          </div>
-          <div className="print-meta-block">
-            <table className="print-meta-table">
-              <tbody>
-                <tr>
-                  <th>{label}番号</th>
-                  <td>{doc.number}</td>
-                </tr>
-                <tr>
-                  <th>発行日</th>
-                  <td>{formatDateJa(doc.issueDate)}</td>
-                </tr>
-                {docType === 'quotation' && (
-                  <tr>
-                    <th>有効期限</th>
-                    <td>{formatDateJa(doc.validUntilDate)}</td>
-                  </tr>
-                )}
-                {(docType === 'invoice' || isConsolidated) && (
-                  <tr>
-                    <th>お支払期限</th>
-                    <td>{formatDateJa(doc.dueDate)}</td>
-                  </tr>
-                )}
-                {company.invoiceRegistrationNumber && (
-                  <tr>
-                    <th>登録番号</th>
-                    <td>{company.invoiceRegistrationNumber}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {isReceipt ? (
-          <div className="receipt-block">
-            <div className="receipt-amount-row">
-              <span>金額</span>
-              <span className="receipt-amount">{formatMoney(totals.grandTotal)}</span>
-              <span>也</span>
-            </div>
-            <div className="receipt-note">但し {doc.title || '代金'} として上記正に領収いたしました。</div>
-            {needsStamp && <div className="receipt-stamp-note">※5万円以上のため収入印紙貼付欄</div>}
-          </div>
-        ) : (
-          <>
-            {isConsolidated && (
-              <table className="print-meta-table balance-table">
-                <tbody>
-                  <tr>
-                    <th>対象期間</th>
-                    <td>
-                      {formatDateJa(doc.periodFrom)} 〜 {formatDateJa(doc.periodTo)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>前回繰越残高</th>
-                    <td>{formatMoney(doc.previousBalance)}</td>
-                  </tr>
-                  <tr>
-                    <th>ご入金額</th>
-                    <td>{formatMoney(doc.paymentsAmount)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            )}
-
-            <table className="items-table print-items-table">
-              <thead>
-                <tr>
-                  <th>品名</th>
-                  <th>数量</th>
-                  <th>単位</th>
-                  <th>単価</th>
-                  <th>税率</th>
-                  <th>金額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {doc.items.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td className="num">{item.quantity}</td>
-                    <td>{item.unit}</td>
-                    <td className="num">{formatMoney(item.unitPrice)}</td>
-                    <td className="num">{item.taxRate === 0 ? '非課税' : `${item.taxRate}%`}</td>
-                    <td className="num">{formatMoney(item.quantity * item.unitPrice)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="print-totals-row">
-              <TotalsBox totals={totals} />
-            </div>
-
-            {isConsolidated && (
-              <table className="print-meta-table balance-table">
-                <tbody>
-                  <tr className="grand-total">
-                    <th>今回御請求額(次回繰越残高)</th>
-                    <td>{formatMoney(doc.previousBalance + totals.grandTotal - doc.paymentsAmount)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            )}
-
-            {docType === 'invoice' && company.bankInfo && (
-              <div className="print-bank-info">
-                <div className="section-label">お振込先</div>
-                <div>{company.bankInfo}</div>
-              </div>
-            )}
-          </>
-        )}
-
-        {doc.notes && (
-          <div className="print-notes">
-            <div className="section-label">備考</div>
-            <div className="print-notes-body">{doc.notes}</div>
-          </div>
-        )}
-
-        <div className="print-company-block">
-          <div>{company.name}</div>
-          <div>
-            〒{company.zip} {company.address1} {company.address2}
-          </div>
-          <div>
-            TEL: {company.tel} {company.fax && `FAX: ${company.fax}`}
-          </div>
-          {company.email && <div>Email: {company.email}</div>}
-          {company.representativeName && <div>{company.representativeName}</div>}
-        </div>
-      </div>
+      <DocumentPrintSheet doc={doc} customer={customer} company={company} docType={docType} />
     </div>
   );
 }

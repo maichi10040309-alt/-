@@ -46,7 +46,7 @@ app.get('/api/events', (req, res) => {
   });
 });
 
-function collectionRoutes(path, collection, listHandler) {
+function collectionRoutes(path, collection, listHandler, { skipDeleteAll } = {}) {
   app.get(`/api/${path}`, listHandler ?? ((req, res) => res.json(collection.list())));
   app.get(`/api/${path}/:id`, (req, res) => {
     const record = collection.get(req.params.id);
@@ -74,21 +74,40 @@ function collectionRoutes(path, collection, listHandler) {
     broadcastChange();
     res.json({ count });
   });
+  app.post(`/api/${path}/bulk-delete`, (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const count = collection.removeMany(ids);
+    broadcastChange();
+    res.json({ count });
+  });
+  if (!skipDeleteAll) {
+    app.delete(`/api/${path}`, (req, res) => {
+      const count = collection.removeAll();
+      broadcastChange();
+      res.json({ count });
+    });
+  }
 }
 
 collectionRoutes('customers', store.customers);
 collectionRoutes('products', store.products);
 // 種別を指定した場合は発行日の新しい順に絞り込んで返す(一覧画面用)
-collectionRoutes('documents', store.documents, (req, res) => {
-  const { type } = req.query;
-  let list = store.documents.list();
-  if (type) {
-    list = list
-      .filter((d) => d.type === type)
-      .sort((a, b) => b.issueDate.localeCompare(a.issueDate));
-  }
-  res.json(list);
-});
+collectionRoutes(
+  'documents',
+  store.documents,
+  (req, res) => {
+    const { type } = req.query;
+    let list = store.documents.list();
+    if (type) {
+      list = list
+        .filter((d) => d.type === type)
+        .sort((a, b) => b.issueDate.localeCompare(a.issueDate));
+    }
+    res.json(list);
+  },
+  // 伝票は種別ごとに一覧画面から削除するため、全種別まとめて消す危険な全削除ルートは登録しない
+  { skipDeleteAll: true },
+);
 
 // 得意先/商品は count とコード自動採番を使うため個別に追加
 app.get('/api/customers-count', (req, res) => res.json({ count: store.customers.count() }));
