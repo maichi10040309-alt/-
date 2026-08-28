@@ -155,17 +155,28 @@ export function issueDocumentNumber(type, issueDate) {
 }
 
 export function issueCustomerCode() {
-  const current = state.counters.customer ?? 1;
-  state.counters.customer = current + 1;
-  persist();
-  return `C${String(current).padStart(4, '0')}`;
+  return issueCustomerCodes(1)[0];
 }
 
 export function issueProductCode() {
-  const current = state.counters.product ?? 1;
-  state.counters.product = current + 1;
+  return issueProductCodes(1)[0];
+}
+
+// まとめて採番する(CSV一括取り込み時、1件ずつサーバーへ問い合わせるのを避けるため)
+export function issueCustomerCodes(count) {
+  const start = state.counters.customer ?? 1;
+  const codes = Array.from({ length: count }, (_, i) => `C${String(start + i).padStart(4, '0')}`);
+  state.counters.customer = start + count;
   persist();
-  return `P${String(current).padStart(4, '0')}`;
+  return codes;
+}
+
+export function issueProductCodes(count) {
+  const start = state.counters.product ?? 1;
+  const codes = Array.from({ length: count }, (_, i) => `P${String(start + i).padStart(4, '0')}`);
+  state.counters.product = start + count;
+  persist();
+  return codes;
 }
 
 export function exportAll() {

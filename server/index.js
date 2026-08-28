@@ -95,6 +95,14 @@ app.get('/api/customers-count', (req, res) => res.json({ count: store.customers.
 app.get('/api/products-count', (req, res) => res.json({ count: store.products.count() }));
 app.post('/api/customers/next-code', (req, res) => res.json({ code: store.issueCustomerCode() }));
 app.post('/api/products/next-code', (req, res) => res.json({ code: store.issueProductCode() }));
+app.post('/api/customers/next-code-batch', (req, res) => {
+  const count = Math.max(0, Number(req.body?.count) || 0);
+  res.json({ codes: store.issueCustomerCodes(count) });
+});
+app.post('/api/products/next-code-batch', (req, res) => {
+  const count = Math.max(0, Number(req.body?.count) || 0);
+  res.json({ codes: store.issueProductCodes(count) });
+});
 
 app.get('/api/company', (req, res) => {
   res.json(store.company.get());

@@ -21,11 +21,15 @@ export const api = {
     ...customersCollection,
     count: () => http.get<{ count: number }>('/api/customers-count').then((r) => r.count),
     nextCode: () => http.post<{ code: string }>('/api/customers/next-code').then((r) => r.code),
+    nextCodeBatch: (count: number) =>
+      http.post<{ codes: string[] }>('/api/customers/next-code-batch', { count }).then((r) => r.codes),
   },
   products: {
     ...productsCollection,
     count: () => http.get<{ count: number }>('/api/products-count').then((r) => r.count),
     nextCode: () => http.post<{ code: string }>('/api/products/next-code').then((r) => r.code),
+    nextCodeBatch: (count: number) =>
+      http.post<{ codes: string[] }>('/api/products/next-code-batch', { count }).then((r) => r.codes),
   },
   documents: {
     ...documentsCollection,

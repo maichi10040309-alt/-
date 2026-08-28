@@ -3,10 +3,12 @@ import { useLiveQuery } from '../api/useLiveQuery';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
-import { parseCSV, toCSV, downloadCSV } from '../utils/csv';
+import CsvImportButton, { type MappedValue } from '../components/CsvImportButton';
+import { toCSV, downloadCSV } from '../utils/csv';
 import { newId } from '../utils/id';
 import { formatMoney, todayISO } from '../utils/format';
-import type { Product } from '../types';
+import type { ImportFieldDef } from '../utils/importMapping';
+import type { Product, TaxRate } from '../types';
 
 const CSV_HEADERS = [
   '商品コード',
@@ -19,6 +21,19 @@ const CSV_HEADERS = [
   '単価3',
   '仕入原価',
   '備考',
+];
+
+const IMPORT_FIELDS: ImportFieldDef[] = [
+  { key: 'code', label: '商品コード', kind: 'text' },
+  { key: 'name', label: '商品名', kind: 'text', required: true },
+  { key: 'category', label: '分類', kind: 'text' },
+  { key: 'unit', label: '単位', kind: 'text' },
+  { key: 'taxRate', label: '税率', kind: 'taxRate' },
+  { key: 'price1', label: '単価1', kind: 'number' },
+  { key: 'price2', label: '単価2', kind: 'number' },
+  { key: 'price3', label: '単価3', kind: 'number' },
+  { key: 'cost', label: '仕入原価', kind: 'number' },
+  { key: 'notes', label: '備考', kind: 'text' },
 ];
 
 export default function ProductList() {
@@ -51,33 +66,33 @@ export default function ProductList() {
     downloadCSV(`商品台帳_${todayISO()}.csv`, toCSV(CSV_HEADERS, rows));
   };
 
-  const handleImportFile = async (file: File) => {
-    const text = await file.text();
-    const rows = parseCSV(text);
-    if (rows.length === 0) return;
-    const body = rows[0][0] === CSV_HEADERS[0] ? rows.slice(1) : rows;
+  const handleImport = async (mapped: Record<string, MappedValue>[]) => {
     const now = new Date().toISOString();
-    const records: Product[] = body
-      .filter((r) => r.length > 1 && r[1])
-      .map((r) => ({
+    const blankCodeCount = mapped.filter((r) => !String(r.code ?? '').trim()).length;
+    const generatedCodes = blankCodeCount > 0 ? await api.products.nextCodeBatch(blankCodeCount) : [];
+    let codeCursor = 0;
+
+    const records: Product[] = mapped.map((r) => {
+      const code = String(r.code ?? '').trim() || generatedCodes[codeCursor++];
+      return {
         id: newId(),
-        code: r[0] ?? '',
-        name: r[1] ?? '',
-        category: r[2] ?? '',
-        unit: r[3] ?? '個',
-        taxRate: (Number(r[4]) as 0 | 8 | 10) || 10,
+        code,
+        name: String(r.name ?? ''),
+        category: String(r.category ?? ''),
+        unit: String(r.unit ?? '個') || '個',
+        taxRate: (r.taxRate as TaxRate | undefined) ?? 10,
         prices: {
-          price1: Number(r[5]) || 0,
-          price2: Number(r[6]) || 0,
-          price3: Number(r[7]) || 0,
-          cost: Number(r[8]) || 0,
+          price1: Number(r.price1) || 0,
+          price2: Number(r.price2) || 0,
+          price3: Number(r.price3) || 0,
+          cost: Number(r.cost) || 0,
         },
-        notes: r[9] ?? '',
+        notes: String(r.notes ?? ''),
         createdAt: now,
         updatedAt: now,
-      }));
+      };
+    });
     await api.products.bulkPut(records);
-    alert(`${records.length}件の商品を取り込みました。`);
   };
 
   return (
@@ -97,19 +112,7 @@ export default function ProductList() {
             <button className="btn btn-secondary" onClick={handleExport}>
               CSVエクスポート
             </button>
-            <label className="btn btn-secondary">
-              CSVインポート
-              <input
-                type="file"
-                accept=".csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleImportFile(file);
-                  e.target.value = '';
-                }}
-              />
-            </label>
+            <CsvImportButton label="CSVインポート" fields={IMPORT_FIELDS} onImport={handleImport} />
             <Link className="btn btn-primary" to="/products/new">
               + 新規商品
             </Link>

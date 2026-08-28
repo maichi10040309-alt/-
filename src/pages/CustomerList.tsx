@@ -3,9 +3,11 @@ import { useLiveQuery } from '../api/useLiveQuery';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
-import { parseCSV, toCSV, downloadCSV } from '../utils/csv';
+import CsvImportButton, { type MappedValue } from '../components/CsvImportButton';
+import { toCSV, downloadCSV } from '../utils/csv';
 import { newId } from '../utils/id';
 import { todayISO } from '../utils/format';
+import type { ImportFieldDef } from '../utils/importMapping';
 import type { Customer } from '../types';
 
 const CSV_HEADERS = [
@@ -25,6 +27,25 @@ const CSV_HEADERS = [
   '支払月オフセット',
   '支払日',
   '備考',
+];
+
+const IMPORT_FIELDS: ImportFieldDef[] = [
+  { key: 'code', label: '得意先コード', kind: 'text' },
+  { key: 'name', label: '得意先名', kind: 'text', required: true },
+  { key: 'kana', label: 'フリガナ', kind: 'text' },
+  { key: 'zip', label: '郵便番号', kind: 'text' },
+  { key: 'address1', label: '住所1', kind: 'text' },
+  { key: 'address2', label: '住所2', kind: 'text' },
+  { key: 'tel', label: '電話番号', kind: 'text' },
+  { key: 'fax', label: 'FAX', kind: 'text' },
+  { key: 'email', label: 'メール', kind: 'text' },
+  { key: 'contactPerson', label: '担当者', kind: 'text' },
+  { key: 'priceTier', label: '単価ランク', kind: 'number' },
+  { key: 'discountRate', label: '掛率(%)', kind: 'number' },
+  { key: 'closingDay', label: '締め日', kind: 'number' },
+  { key: 'paymentMonthOffset', label: '支払月オフセット', kind: 'number' },
+  { key: 'paymentDay', label: '支払日', kind: 'number' },
+  { key: 'notes', label: '備考', kind: 'text' },
 ];
 
 export default function CustomerList() {
@@ -66,37 +87,39 @@ export default function CustomerList() {
     downloadCSV(`得意先台帳_${todayISO()}.csv`, toCSV(CSV_HEADERS, rows));
   };
 
-  const handleImportFile = async (file: File) => {
-    const text = await file.text();
-    const rows = parseCSV(text);
-    if (rows.length === 0) return;
-    const body = rows[0][0] === CSV_HEADERS[0] ? rows.slice(1) : rows;
+  const handleImport = async (mapped: Record<string, MappedValue>[]) => {
     const now = new Date().toISOString();
-    const records: Customer[] = body
-      .filter((r) => r.length > 1 && r[1])
-      .map((r) => ({
+    const blankCodeCount = mapped.filter((r) => !String(r.code ?? '').trim()).length;
+    const generatedCodes = blankCodeCount > 0 ? await api.customers.nextCodeBatch(blankCodeCount) : [];
+    let codeCursor = 0;
+
+    const records: Customer[] = mapped.map((r) => {
+      const code = String(r.code ?? '').trim() || generatedCodes[codeCursor++];
+      const priceTierRaw = Math.round(Number(r.priceTier) || 1);
+      const priceTier = (priceTierRaw >= 1 && priceTierRaw <= 3 ? priceTierRaw : 1) as 1 | 2 | 3;
+      return {
         id: newId(),
-        code: r[0] ?? '',
-        name: r[1] ?? '',
-        kana: r[2] ?? '',
-        zip: r[3] ?? '',
-        address1: r[4] ?? '',
-        address2: r[5] ?? '',
-        tel: r[6] ?? '',
-        fax: r[7] ?? '',
-        email: r[8] ?? '',
-        contactPerson: r[9] ?? '',
-        priceTier: (Number(r[10]) as 1 | 2 | 3) || 1,
-        discountRate: Number(r[11]) || 100,
-        closingDay: Number(r[12]) || 31,
-        paymentMonthOffset: Number(r[13]) || 1,
-        paymentDay: Number(r[14]) || 31,
-        notes: r[15] ?? '',
+        code,
+        name: String(r.name ?? ''),
+        kana: String(r.kana ?? ''),
+        zip: String(r.zip ?? ''),
+        address1: String(r.address1 ?? ''),
+        address2: String(r.address2 ?? ''),
+        tel: String(r.tel ?? ''),
+        fax: String(r.fax ?? ''),
+        email: String(r.email ?? ''),
+        contactPerson: String(r.contactPerson ?? ''),
+        priceTier,
+        discountRate: Number(r.discountRate) || 100,
+        closingDay: Number(r.closingDay) || 31,
+        paymentMonthOffset: Number(r.paymentMonthOffset) || 1,
+        paymentDay: Number(r.paymentDay) || 31,
+        notes: String(r.notes ?? ''),
         createdAt: now,
         updatedAt: now,
-      }));
+      };
+    });
     await api.customers.bulkPut(records);
-    alert(`${records.length}件の得意先を取り込みました。`);
   };
 
   return (
@@ -116,19 +139,7 @@ export default function CustomerList() {
             <button className="btn btn-secondary" onClick={handleExport}>
               CSVエクスポート
             </button>
-            <label className="btn btn-secondary">
-              CSVインポート
-              <input
-                type="file"
-                accept=".csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleImportFile(file);
-                  e.target.value = '';
-                }}
-              />
-            </label>
+            <CsvImportButton label="CSVインポート" fields={IMPORT_FIELDS} onImport={handleImport} />
             <Link className="btn btn-primary" to="/customers/new">
               + 新規得意先
             </Link>
