@@ -2,6 +2,8 @@ import type { CompanyInfo, Customer, SalesDocument } from '../types';
 import { calcDocumentTotals } from '../utils/tax';
 import { formatDateJa, formatMoney } from '../utils/format';
 
+const MIN_ITEM_ROWS = 6;
+
 // 納品書はA4用紙1枚に「原本(上半分)」「控え(下半分)」を印刷し、
 // ミシン目や手切りで2つに分けて使う想定のレイアウト。
 export default function DeliveryNotePrint({
@@ -40,6 +42,7 @@ function DeliveryHalf({
   totals: ReturnType<typeof calcDocumentTotals>;
 }) {
   const title = variant === 'original' ? '納品書' : '納品書（控）';
+  const blankRowCount = Math.max(0, MIN_ITEM_ROWS - doc.items.length);
 
   return (
     <div className="delivery-half">
@@ -62,21 +65,38 @@ function DeliveryHalf({
               </tr>
             </tbody>
           </table>
+          <div className="delivery-page-indicator">Page. 1 / 1</div>
         </div>
       </div>
 
-      <div className="delivery-company-row">
-        <div className="delivery-company-text">
-          <div className="delivery-company-name">{company.name}</div>
-          <div>
-            〒{company.zip} {company.address1} {company.address2}
+      <div className="delivery-company-inspection-row">
+        <div className="delivery-company-row">
+          <div className="delivery-company-text">
+            <div className="delivery-company-name">{company.name}</div>
+            <div>
+              〒{company.zip} {company.address1} {company.address2}
+            </div>
+            <div>
+              TEL:{company.tel} {company.fax && `FAX:${company.fax}`}
+            </div>
+            {company.invoiceRegistrationNumber && <div>登録番号：{company.invoiceRegistrationNumber}</div>}
           </div>
-          <div>
-            TEL:{company.tel} {company.fax && `FAX:${company.fax}`}
-          </div>
-          {company.invoiceRegistrationNumber && <div>登録番号：{company.invoiceRegistrationNumber}</div>}
+          {company.sealImageDataUrl && (
+            <img src={company.sealImageDataUrl} alt="会社印" className="delivery-seal" />
+          )}
         </div>
-        {company.sealImageDataUrl && <img src={company.sealImageDataUrl} alt="会社印" className="delivery-seal" />}
+        <table className="delivery-inspection-box">
+          <thead>
+            <tr>
+              <th>検印</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div className="delivery-message-row">
@@ -106,19 +126,16 @@ function DeliveryHalf({
                 <td></td>
               </tr>
             ))}
-          </tbody>
-        </table>
-        <table className="delivery-inspection-box">
-          <thead>
-            <tr>
-              <th colSpan={2}>検印</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td></td>
-              <td></td>
-            </tr>
+            {Array.from({ length: blankRowCount }).map((_, i) => (
+              <tr key={`blank-${i}`}>
+                <td>&nbsp;</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -126,6 +143,9 @@ function DeliveryHalf({
       <table className="delivery-totals-table">
         <tbody>
           <tr>
+            <th className="delivery-totals-label" rowSpan={1}>
+              合計
+            </th>
             <th>税抜合計</th>
             <td className="num">{formatMoney(totals.subtotal)}</td>
             <th>消費税額</th>
