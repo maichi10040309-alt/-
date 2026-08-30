@@ -44,6 +44,18 @@ export default function Settings() {
     location.reload();
   };
 
+  const handleSealUpload = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('画像ファイル(PNG・JPGなど)を選んでください。');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      set('sealImageDataUrl', String(reader.result));
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div>
       <PageHeader
@@ -102,6 +114,41 @@ export default function Settings() {
           振込先情報(請求書に印字)
           <textarea value={company.bankInfo} onChange={(e) => set('bankInfo', e.target.value)} rows={2} />
         </label>
+
+        <div className="col-span-2 seal-upload-row">
+          <div className="seal-upload-label">会社印(印影)</div>
+          <div className="seal-upload-body">
+            {company.sealImageDataUrl ? (
+              <img src={company.sealImageDataUrl} alt="会社印" className="seal-preview" />
+            ) : (
+              <div className="seal-preview seal-preview-empty">未設定</div>
+            )}
+            <div className="seal-upload-actions">
+              <label className="btn btn-secondary">
+                画像を選択
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleSealUpload(file);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {company.sealImageDataUrl && (
+                <button type="button" className="btn btn-secondary" onClick={() => set('sealImageDataUrl', '')}>
+                  削除
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="hint">
+            印影のスキャン画像・写真(背景が白いもの推奨、PNG形式で背景透過なら仕上がりがきれいです)を登録すると、
+            納品書などの印刷時に自動で印字されます。保存を押すまで反映されません。
+          </p>
+        </div>
 
         <div className="section-divider col-span-2">税設定</div>
         <label>

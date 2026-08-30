@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { DocumentType } from '../types';
 import DocumentPrintSheet from '../components/DocumentPrintSheet';
+import DeliveryNotePrint from '../components/DeliveryNotePrint';
 import { getPaperCss } from '../utils/printPaper';
 
 export default function DocumentPrint() {
@@ -33,7 +34,11 @@ export default function DocumentPrint() {
         </button>
       </div>
 
-      <DocumentPrintSheet doc={doc} customer={customer} company={company} docType={docType} />
+      {docType === 'delivery' ? (
+        <DeliveryNotePrint doc={doc} customer={customer} company={company} />
+      ) : (
+        <DocumentPrintSheet doc={doc} customer={customer} company={company} docType={docType} />
+      )}
     </div>
   );
 }

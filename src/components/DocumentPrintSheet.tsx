@@ -157,14 +157,19 @@ export default function DocumentPrintSheet({
 
       <div className="print-company-block">
         <div>{company.name}</div>
-        <div>
-          〒{company.zip} {company.address1} {company.address2}
+        <div className="print-company-text">
+          <div>
+            〒{company.zip} {company.address1} {company.address2}
+          </div>
+          <div>
+            TEL: {company.tel} {company.fax && `FAX: ${company.fax}`}
+          </div>
+          {company.email && <div>Email: {company.email}</div>}
+          {company.representativeName && <div>{company.representativeName}</div>}
         </div>
-        <div>
-          TEL: {company.tel} {company.fax && `FAX: ${company.fax}`}
-        </div>
-        {company.email && <div>Email: {company.email}</div>}
-        {company.representativeName && <div>{company.representativeName}</div>}
+        {company.sealImageDataUrl && (
+          <img src={company.sealImageDataUrl} alt="会社印" className="print-seal-image" />
+        )}
       </div>
     </div>
   );

@@ -612,6 +612,49 @@ textarea:focus {
   text-align: center;
 }
 
+/* 会社印アップロード */
+.seal-upload-row {
+  padding: 14px 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.seal-upload-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.seal-upload-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.seal-preview {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: white;
+}
+
+.seal-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  background: #f4f6f4;
+}
+
+.seal-upload-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* print */
 .print-toolbar {
   display: flex;
@@ -634,6 +677,12 @@ textarea:focus {
 
 .print-batch-item:last-child {
   break-after: auto;
+}
+
+/* 納品書(A4原本+控え)は既にページ全体の高さを使い切っているため、
+   余白を足すとページ内に収まらず1件で2ページに割れてしまう。ここで打ち消す。 */
+.print-batch-item:has(.delivery-a4-sheet) {
+  margin-bottom: 0;
 }
 
 .print-title {
@@ -740,6 +789,21 @@ textarea:focus {
   font-size: 12.5px;
   color: var(--color-text-muted);
   text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.print-company-text {
+  flex: 1;
+}
+
+.print-seal-image {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .receipt-block {
@@ -775,76 +839,238 @@ textarea:focus {
 
 /*
  * 既定の帳票用紙に合わせた用紙サイズ・余白調整
- * ・納品書: FSC認証プリンタ帳票用紙マルチタイプ 白紙/2分割・4穴
- *   (ミシン目切り離し後 タテ148.5×ヨコ210mm、横長)
+ * ・納品書: A4に原本(上半分)・控え(下半分)を印刷するレイアウト。詳細は下記の
+ *   delivery-* 系クラス、および用紙サイズは utils/printPaper.ts を参照。
  * ・請求書: ヒサゴ 請求書 1面2穴 インボイス対応 A4(ヨコ210×タテ297mm)
  * 穴の正確な位置は用紙により異なるため、日本の2穴パンチJIS規格
  * (穴中心が端から12mm、穴径6mm)を目安に、左端に安全マージンを確保している。
  * 実機で試し印刷し、必要に応じて余白を微調整すること。
  */
-.print-page-delivery.print-sheet {
-  max-width: 700px;
+
+/* 納品書: A4 1枚に原本+控えの2面レイアウト */
+.delivery-a4-sheet {
+  max-width: 780px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: 285mm; /* A4高さ297mm - 上下余白(printPaper.tsの@page margin 4mm×2)分 */
 }
 
-.print-page-delivery .print-title {
-  font-size: 16px;
-  letter-spacing: 0.2em;
-  margin: 0 0 10px;
+.delivery-half {
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 4mm 2mm;
 }
 
-.print-page-delivery .print-top-row {
-  margin-bottom: 10px;
+.delivery-cut-line {
+  position: relative;
+  height: 0;
+  border-top: 1px dashed #999;
+  text-align: center;
 }
 
-.print-page-delivery .print-customer-name {
-  font-size: 14px;
-  padding-bottom: 3px;
+.delivery-cut-line span {
+  position: relative;
+  top: -7px;
+  background: white;
+  padding: 0 8px;
+  font-size: 9px;
+  color: #999;
+  letter-spacing: 0.1em;
+}
+
+.delivery-header-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.delivery-customer-box {
+  flex: 1;
+  border: 1px solid var(--color-text);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 46px;
+}
+
+.delivery-customer-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.delivery-doc-title {
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.delivery-title-block {
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.delivery-title-box {
+  border: 2px solid var(--color-text);
+  border-radius: 4px;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  padding: 4px 0;
   margin-bottom: 4px;
 }
 
-.print-page-delivery .print-doc-title {
-  font-size: 11px;
+.delivery-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
 }
 
-.print-page-delivery .print-meta-block {
-  width: 220px;
-}
-
-.print-page-delivery .print-meta-table th,
-.print-page-delivery .print-meta-table td {
+.delivery-meta-table th,
+.delivery-meta-table td {
+  border: 1px solid var(--color-border);
   padding: 2px 6px;
+}
+
+.delivery-meta-table th {
+  background: #f4f6f4;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  width: 40%;
+  text-align: left;
+}
+
+.delivery-company-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  text-align: right;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin-bottom: 5px;
+}
+
+.delivery-company-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.delivery-seal {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.delivery-message-row {
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 10.5px;
+  margin-bottom: 5px;
+}
+
+.delivery-items-row {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 5px;
+}
+
+.delivery-items-table {
+  flex: 1;
+  border-collapse: collapse;
+  font-size: 10.5px;
+  table-layout: fixed;
+}
+
+.delivery-items-table th,
+.delivery-items-table td {
+  border: 1px solid var(--color-border);
+  padding: 2px 5px;
+  overflow: hidden;
+}
+
+.delivery-items-table th {
+  background: #eef2ee;
+  font-size: 10px;
+}
+
+.delivery-items-table .col-qty,
+.delivery-items-table .col-unit {
+  width: 9%;
+}
+
+.delivery-items-table .col-price,
+.delivery-items-table .col-amount {
+  width: 14%;
+}
+
+.delivery-items-table .col-note {
+  width: 12%;
+}
+
+.delivery-items-table .num {
+  text-align: right;
+}
+
+.delivery-inspection-box {
+  width: 60px;
+  flex-shrink: 0;
+  height: fit-content;
+  border-collapse: collapse;
+  font-size: 9px;
+}
+
+.delivery-inspection-box th,
+.delivery-inspection-box td {
+  border: 1px solid var(--color-border);
+}
+
+.delivery-inspection-box th {
+  background: #eef2ee;
+  padding: 2px;
+}
+
+.delivery-inspection-box td {
+  height: 24px;
+}
+
+.delivery-totals-table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 10.5px;
 }
 
-.print-page-delivery .print-items-table {
-  margin: 8px 0;
-  font-size: 11px;
+.delivery-totals-table th,
+.delivery-totals-table td {
+  border: 1px solid var(--color-border);
+  padding: 3px 8px;
 }
 
-.print-page-delivery .print-items-table th,
-.print-page-delivery .print-items-table td {
-  padding: 3px 6px;
+.delivery-totals-table th {
+  background: #f4f6f4;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  width: 15%;
 }
 
-.print-page-delivery .print-totals-row {
-  margin-bottom: 8px;
+.delivery-totals-table .num {
+  text-align: right;
+  width: 18%;
 }
 
-.print-page-delivery .totals-box {
-  font-size: 11px;
-  max-width: 260px;
-}
-
-.print-page-delivery .print-notes,
-.print-page-delivery .print-bank-info {
-  margin: 8px 0;
-  font-size: 11px;
-}
-
-.print-page-delivery .print-company-block {
-  margin-top: 8px;
-  padding-top: 6px;
-  font-size: 10px;
+.delivery-totals-table .num.strong {
+  font-weight: 800;
+  color: var(--color-primary-dark);
 }
 
 @media print {

@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { CompanyInfo, Customer, DocumentType, SalesDocument } from '../types';
 import { DOCUMENT_TYPE_LABEL } from '../types';
 import DocumentPrintSheet from '../components/DocumentPrintSheet';
+import DeliveryNotePrint from '../components/DeliveryNotePrint';
 import { getPaperCss } from '../utils/printPaper';
 
 export default function DocumentPrintBatch() {
@@ -68,7 +69,11 @@ export default function DocumentPrintBatch() {
 
       {docs.map((doc) => (
         <div className="print-batch-item" key={doc.id}>
-          <DocumentPrintSheet doc={doc} customer={customerMap.get(doc.customerId)} company={company} docType={docType} />
+          {docType === 'delivery' ? (
+            <DeliveryNotePrint doc={doc} customer={customerMap.get(doc.customerId)} company={company} />
+          ) : (
+            <DocumentPrintSheet doc={doc} customer={customerMap.get(doc.customerId)} company={company} docType={docType} />
+          )}
         </div>
       ))}
     </div>
