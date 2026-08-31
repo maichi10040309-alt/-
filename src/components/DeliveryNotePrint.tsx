@@ -103,18 +103,32 @@ function DeliveryHalf({
             <img src={company.sealImageDataUrl} alt="会社印" className="delivery-seal" />
           )}
         </div>
-        <table className="delivery-inspection-box">
-          <thead>
-            <tr>
-              <th>検印</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td></td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="delivery-inspection-group">
+          <table className="delivery-inspection-box">
+            <thead>
+              <tr>
+                <th>検印</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+          <table className="delivery-inspection-box">
+            <thead>
+              <tr>
+                <th>検印</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="delivery-message-row">

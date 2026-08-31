@@ -1099,8 +1099,14 @@ textarea:focus {
   text-align: right;
 }
 
+.delivery-inspection-group {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .delivery-inspection-box {
-  width: 48px;
+  width: 44px;
   flex-shrink: 0;
   border-collapse: collapse;
   font-size: 9px;
@@ -1157,25 +1163,29 @@ textarea:focus {
   color: var(--color-primary-dark);
 }
 
-/* 合計請求書(掛売り請求書)レイアウト。参照画像に合わせ、青系の配色を使用する */
+/*
+ * 合計請求書(掛売り請求書)レイアウト。ヒサゴの合計請求書用紙に合わせ、
+ * 罫線は黒・グレーの実務帳票らしい配色にしている。
+ * 明細が少ない場合でもA4用紙1枚分になるよう、.ci-sheetを用紙の印字可能領域と
+ * 同じ高さに固定してflexで縦に引き伸ばし、.ci-items-rowが余白を吸収する。
+ */
 .ci-sheet {
   max-width: 780px;
-  padding: 8mm 6mm;
-  --ci-blue: #1a4fa0;
-  --ci-blue-light: #eaf1fb;
+  height: 277mm; /* A4高さ297mm - 上下余白(printPaper.tsの@page margin 10mm×2)分 */
+  padding: 6mm 4mm;
+  display: flex;
+  flex-direction: column;
 }
 
 .ci-header-row {
   display: flex;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .ci-customer-box {
   flex: 1;
-  border: 1px solid var(--color-text);
-  border-radius: 4px;
-  padding: 8px 12px 6px;
+  padding: 8px 4px 6px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1199,9 +1209,11 @@ textarea:focus {
 .ci-customer-name-row {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   margin-top: 2px;
+  border-bottom: 1px solid var(--color-text);
+  padding-bottom: 4px;
 }
 
 .ci-customer-name {
@@ -1215,49 +1227,43 @@ textarea:focus {
   flex-shrink: 0;
 }
 
-.ci-customer-code-box {
-  border-top: 1px solid var(--color-text);
-  margin-top: 4px;
-  padding-top: 4px;
-  font-size: 10px;
+.ci-customer-code-row {
+  font-size: 10.5px;
   color: var(--color-text-muted);
+  margin-bottom: 6px;
 }
 
 .ci-title-block {
-  width: 200px;
+  width: 240px;
   flex-shrink: 0;
 }
 
 .ci-title-box {
-  border: 2px solid var(--ci-blue);
-  color: var(--ci-blue);
-  border-radius: 4px;
+  border-top: 2px solid var(--color-text);
+  border-bottom: 2px solid var(--color-text);
   text-align: center;
   font-size: 20px;
   font-weight: 800;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.4em;
   padding: 6px 0;
   margin-bottom: 6px;
 }
 
-.ci-meta-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
+.ci-meta-line {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 4px;
+  white-space: nowrap;
 }
 
-.ci-meta-table th,
-.ci-meta-table td {
-  border: 1px solid var(--color-border);
-  padding: 3px 8px;
-}
-
-.ci-meta-table th {
-  background: var(--ci-blue-light);
-  color: var(--color-text-muted);
-  font-weight: 600;
-  width: 40%;
-  text-align: left;
+.ci-meta-no {
+  flex-shrink: 0;
 }
 
 .ci-company-inspection-row {
@@ -1265,22 +1271,28 @@ textarea:focus {
   align-items: flex-start;
   justify-content: flex-end;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+}
+
+.ci-inspection-group {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .ci-company-row {
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
   flex: 1;
   text-align: right;
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--color-text-muted);
 }
 
 .ci-inspection-box {
-  width: 48px;
+  width: 44px;
   flex-shrink: 0;
   border-collapse: collapse;
   font-size: 9px;
@@ -1293,7 +1305,7 @@ textarea:focus {
 }
 
 .ci-inspection-box th {
-  background: var(--ci-blue-light);
+  background: #f4f6f4;
   padding: 2px;
 }
 
@@ -1306,13 +1318,13 @@ textarea:focus {
 }
 
 .ci-company-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--color-text);
 }
 
-.ci-staff-line {
-  margin-top: 3px;
+.ci-bank-line {
+  margin-top: 2px;
 }
 
 .ci-seal {
@@ -1323,71 +1335,29 @@ textarea:focus {
 }
 
 .ci-message-row {
-  background: var(--ci-blue-light);
-  color: var(--ci-blue);
-  border-radius: 3px;
-  padding: 5px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.ci-bank-row {
   display: flex;
-  align-items: stretch;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
-}
-
-.ci-bank-box {
-  flex: 1;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: 6px 10px;
   font-size: 11px;
-}
-
-.ci-bank-label {
-  font-weight: 700;
-  color: var(--ci-blue);
-  margin-bottom: 2px;
-}
-
-.ci-bank-text {
-  white-space: pre-wrap;
-}
-
-.ci-paid-box {
-  width: 90px;
-  flex-shrink: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  margin-bottom: 6px;
 }
 
 .ci-paid-mark {
   color: var(--color-danger);
-  border: 2px solid var(--color-danger);
-  border-radius: 4px;
-  padding: 4px 8px;
-  text-align: center;
-  font-size: 12px;
+  border: 1px solid var(--color-danger);
+  border-radius: 3px;
+  padding: 1px 8px;
+  font-size: 10px;
   font-weight: 800;
-  transform: rotate(-8deg);
-}
-
-.ci-paid-date {
-  font-size: 9px;
-  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .ci-summary-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .ci-summary-table th,
@@ -1398,7 +1368,7 @@ textarea:focus {
 }
 
 .ci-summary-table th {
-  background: var(--ci-blue-light);
+  background: #f4f6f4;
   color: var(--color-text-muted);
   font-weight: 600;
 }
@@ -1408,17 +1378,22 @@ textarea:focus {
 }
 
 .ci-summary-table .ci-summary-highlight {
-  background: var(--ci-blue);
-  color: white;
+  background: #dfe4de;
+  color: var(--color-text);
   font-weight: 800;
+}
+
+.ci-items-row {
+  flex: 1;
+  min-height: 0;
 }
 
 .ci-items-table {
   width: 100%;
+  height: 100%;
   border-collapse: collapse;
   font-size: 10.5px;
   table-layout: fixed;
-  margin-bottom: 10px;
 }
 
 .ci-items-table th,
@@ -1429,7 +1404,7 @@ textarea:focus {
 }
 
 .ci-items-table th {
-  background: var(--ci-blue-light);
+  background: #f4f6f4;
   font-size: 10px;
 }
 
@@ -1440,7 +1415,7 @@ textarea:focus {
 
 .ci-items-table .col-qty,
 .ci-items-table .col-unit {
-  width: 7%;
+  width: 6%;
 }
 
 .ci-items-table .col-price,
@@ -1456,15 +1431,9 @@ textarea:focus {
   text-align: right;
 }
 
-.ci-items-table tfoot td {
-  text-align: right;
-  font-weight: 700;
-  color: var(--ci-blue);
-}
-
 .ci-notes-row {
   font-size: 12px;
-  margin-top: 12px;
+  margin-top: 6px;
 }
 
 .paid-toggle-cell {
