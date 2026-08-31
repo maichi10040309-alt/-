@@ -83,6 +83,15 @@ export default function DocumentList() {
     navigate(`/documents/${docType}/print-batch?ids=${Array.from(selected).join(',')}`);
   };
 
+  const showPaidColumn = docType !== 'quotation';
+
+  const handleTogglePaid = async (id: string, paid: boolean) => {
+    await api.documents.patch(id, {
+      paid,
+      paidDate: paid ? new Date().toISOString().slice(0, 10) : '',
+    });
+  };
+
   return (
     <div>
       <PageHeader
@@ -141,6 +150,7 @@ export default function DocumentList() {
               <th>件名</th>
               <th>金額</th>
               <th>状態</th>
+              {showPaidColumn && <th>入金</th>}
               <th></th>
             </tr>
           </thead>
@@ -162,6 +172,18 @@ export default function DocumentList() {
                       {DOCUMENT_STATUS_LABEL[d.status]}
                     </span>
                   </td>
+                  {showPaidColumn && (
+                    <td>
+                      <label className="paid-toggle-cell">
+                        <input
+                          type="checkbox"
+                          checked={!!d.paid}
+                          onChange={(e) => handleTogglePaid(d.id, e.target.checked)}
+                        />
+                        {d.paid && '入金済'}
+                      </label>
+                    </td>
+                  )}
                   <td className="row-actions">
                     <Link className="link" to={`/documents/${docType}/${d.id}`}>
                       編集
@@ -175,7 +197,7 @@ export default function DocumentList() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty-row">
+                <td colSpan={showPaidColumn ? 9 : 8} className="empty-row">
                   {label}が登録されていません。
                 </td>
               </tr>

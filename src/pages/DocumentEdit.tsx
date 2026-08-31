@@ -33,6 +33,10 @@ const emptyDoc = (type: DocumentType): SalesDocument => {
     previousBalance: 0,
     paymentsAmount: 0,
     deliveryTag: '',
+    paid: false,
+    paidDate: '',
+    bankFee: 0,
+    sourceSummaries: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -59,7 +63,20 @@ export default function DocumentEdit() {
     }
     api.documents
       .get(id!)
-      .then((d) => setDoc(d ? { ...d, deliveryTag: d.deliveryTag ?? '' } : d))
+      .then((d) =>
+        setDoc(
+          d
+            ? {
+                ...d,
+                deliveryTag: d.deliveryTag ?? '',
+                paid: d.paid ?? false,
+                paidDate: d.paidDate ?? '',
+                bankFee: d.bankFee ?? 0,
+                sourceSummaries: d.sourceSummaries ?? [],
+              }
+            : d,
+        ),
+      )
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [id, isNew, docType]);
@@ -211,6 +228,20 @@ export default function DocumentEdit() {
                 </option>
               ))}
             </select>
+          </label>
+        )}
+        {docType !== 'quotation' && (
+          <label className="paid-check-label">
+            <input type="checkbox" checked={doc.paid} onChange={(e) => set('paid', e.target.checked)} />
+            入金済み
+            {doc.paid && (
+              <input
+                type="date"
+                className="paid-date-input"
+                value={doc.paidDate}
+                onChange={(e) => set('paidDate', e.target.value)}
+              />
+            )}
           </label>
         )}
         <label className="col-span-2">

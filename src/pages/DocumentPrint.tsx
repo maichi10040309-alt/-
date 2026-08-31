@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { DocumentType } from '../types';
 import DocumentPrintSheet from '../components/DocumentPrintSheet';
 import DeliveryNotePrint from '../components/DeliveryNotePrint';
+import ConsolidatedInvoicePrint from '../components/ConsolidatedInvoicePrint';
 import { getPaperCss } from '../utils/printPaper';
 
 export default function DocumentPrint() {
@@ -36,6 +37,8 @@ export default function DocumentPrint() {
 
       {docType === 'delivery' ? (
         <DeliveryNotePrint doc={doc} customer={customer} company={company} />
+      ) : docType === 'consolidated_invoice' ? (
+        <ConsolidatedInvoicePrint doc={doc} customer={customer} company={company} />
       ) : (
         <DocumentPrintSheet doc={doc} customer={customer} company={company} docType={docType} />
       )}

@@ -92,6 +92,12 @@ export default function BillingRun() {
       const number = await issueDocumentNumber('consolidated_invoice', issueDate);
       const balance = receivables.get(custId);
       const customer = customers?.find((c) => c.id === custId);
+      const sourceSummaries = docs.map((d) => ({
+        date: d.issueDate,
+        number: d.number,
+        title: d.title,
+        subtotal: calcDocumentTotals(d.items, rounding).subtotal,
+      }));
 
       const newDoc: SalesDocument = {
         id: newId(),
@@ -112,6 +118,10 @@ export default function BillingRun() {
         previousBalance: balance?.balance ?? 0,
         paymentsAmount: 0,
         deliveryTag: '',
+        paid: false,
+        paidDate: '',
+        bankFee: 0,
+        sourceSummaries,
         createdAt: now,
         updatedAt: now,
       };

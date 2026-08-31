@@ -11,5 +11,6 @@ export function getPaperClass(docType: DocumentType): string {
 export function getPaperCss(docType: DocumentType): string | null {
   if (docType === 'delivery') return '@page { size: 210mm 297mm; margin: 4mm 6mm; }';
   if (docType === 'invoice') return '@page { size: 210mm 297mm; margin: 15mm 15mm 15mm 22mm; }';
+  if (docType === 'consolidated_invoice') return '@page { size: 210mm 297mm; margin: 10mm 12mm; }';
   return null;
 }

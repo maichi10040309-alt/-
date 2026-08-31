@@ -5,6 +5,7 @@ import type { CompanyInfo, Customer, DocumentType, SalesDocument } from '../type
 import { DOCUMENT_TYPE_LABEL } from '../types';
 import DocumentPrintSheet from '../components/DocumentPrintSheet';
 import DeliveryNotePrint from '../components/DeliveryNotePrint';
+import ConsolidatedInvoicePrint from '../components/ConsolidatedInvoicePrint';
 import { getPaperCss } from '../utils/printPaper';
 
 export default function DocumentPrintBatch() {
@@ -71,6 +72,8 @@ export default function DocumentPrintBatch() {
         <div className="print-batch-item" key={doc.id}>
           {docType === 'delivery' ? (
             <DeliveryNotePrint doc={doc} customer={customerMap.get(doc.customerId)} company={company} />
+          ) : docType === 'consolidated_invoice' ? (
+            <ConsolidatedInvoicePrint doc={doc} customer={customerMap.get(doc.customerId)} company={company} />
           ) : (
             <DocumentPrintSheet doc={doc} customer={customerMap.get(doc.customerId)} company={company} docType={docType} />
           )}

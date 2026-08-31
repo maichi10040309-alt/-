@@ -98,6 +98,7 @@ function DeliveryHalf({
             {company.invoiceRegistrationNumber && <div>登録番号：{company.invoiceRegistrationNumber}</div>}
             <div className="delivery-tag-box">{doc.deliveryTag || ' '}</div>
           </div>
+          {doc.paid && <div className="delivery-paid-mark">入金済</div>}
           {company.sealImageDataUrl && (
             <img src={company.sealImageDataUrl} alt="会社印" className="delivery-seal" />
           )}

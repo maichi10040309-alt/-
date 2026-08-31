@@ -133,6 +133,17 @@ export interface SalesDocument {
   previousBalance: number; // 合計請求書:前回繰越残高
   paymentsAmount: number; // 合計請求書:入金額(相殺した領収額)
   deliveryTag: string; // 納品書の配送区分(直送・店頭・営業担当者名など、company.deliveryTagOptionsから選択)
+  paid: boolean; // 入金済みフラグ
+  paidDate: string; // 入金日
+  bankFee: number; // 振込手数料(合計請求書の繰越計算用)
+  sourceSummaries: DocumentSourceSummary[]; // 締め処理時点の納品書ごとの内訳(合計請求書の明細表示用)
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DocumentSourceSummary {
+  date: string; // 元の納品書の発行日
+  number: string; // 元の納品書の番号
+  title: string; // 施設名など(得意先名や件名)
+  subtotal: number; // 税抜金額
 }
