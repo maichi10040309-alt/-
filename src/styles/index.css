@@ -1260,15 +1260,45 @@ textarea:focus {
   text-align: left;
 }
 
+.ci-company-inspection-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .ci-company-row {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: flex-end;
   gap: 12px;
-  margin-bottom: 8px;
+  flex: 1;
   text-align: right;
   font-size: 10.5px;
   color: var(--color-text-muted);
+}
+
+.ci-inspection-box {
+  width: 48px;
+  flex-shrink: 0;
+  border-collapse: collapse;
+  font-size: 9px;
+}
+
+.ci-inspection-box th,
+.ci-inspection-box td {
+  border: 1px solid var(--color-border);
+  text-align: center;
+}
+
+.ci-inspection-box th {
+  background: var(--ci-blue-light);
+  padding: 2px;
+}
+
+.ci-inspection-box td {
+  height: 26px;
 }
 
 .ci-company-text {

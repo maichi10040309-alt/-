@@ -14,10 +14,14 @@ export default function ConsolidatedInvoicePrint({
   company: CompanyInfo;
 }) {
   const totals = calcDocumentTotals(doc.items, company.taxRounding);
-  const carryOver = doc.previousBalance - doc.paymentsAmount - doc.bankFee;
+  const previousBalance = doc.previousBalance ?? 0;
+  const paymentsAmount = doc.paymentsAmount ?? 0;
+  const bankFee = doc.bankFee ?? 0;
+  const carryOver = previousBalance - paymentsAmount - bankFee;
   const currentBilling = carryOver + totals.grandTotal;
   const hasAddress = !!customer?.address1;
-  const sources = doc.sourceSummaries.length > 0 ? doc.sourceSummaries : [];
+  // 本機能追加前に発行した合計請求書には sourceSummaries が存在しないため空配列にフォールバックする
+  const sources = doc.sourceSummaries ?? [];
 
   return (
     <div className="print-sheet ci-sheet">
@@ -62,21 +66,47 @@ export default function ConsolidatedInvoicePrint({
         </div>
       </div>
 
-      <div className="ci-company-row">
-        <div className="ci-company-text">
-          <div className="ci-company-name">{company.name}</div>
-          <div>
-            〒{company.zip} {company.address1} {company.address2}
+      <div className="ci-company-inspection-row">
+        <div className="ci-company-row">
+          <div className="ci-company-text">
+            <div className="ci-company-name">{company.name}</div>
+            <div>
+              〒{company.zip} {company.address1} {company.address2}
+            </div>
+            <div>
+              TEL:{company.tel} {company.fax && `FAX:${company.fax}`}
+            </div>
+            {company.invoiceRegistrationNumber && <div>登録番号：{company.invoiceRegistrationNumber}</div>}
+            <div className="ci-staff-line">担当：</div>
           </div>
-          <div>
-            TEL:{company.tel} {company.fax && `FAX:${company.fax}`}
-          </div>
-          {company.invoiceRegistrationNumber && <div>登録番号：{company.invoiceRegistrationNumber}</div>}
-          <div className="ci-staff-line">担当：</div>
+          {company.sealImageDataUrl && (
+            <img src={company.sealImageDataUrl} alt="会社印" className="ci-seal" />
+          )}
         </div>
-        {company.sealImageDataUrl && (
-          <img src={company.sealImageDataUrl} alt="会社印" className="ci-seal" />
-        )}
+        <table className="ci-inspection-box">
+          <thead>
+            <tr>
+              <th>検印</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        <table className="ci-inspection-box">
+          <thead>
+            <tr>
+              <th>検印</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div className="ci-message-row">毎度ありがとうございます。下記の通り御請求申し上げます。</div>
@@ -110,9 +140,9 @@ export default function ConsolidatedInvoicePrint({
         </thead>
         <tbody>
           <tr>
-            <td className="num">{formatMoney(doc.previousBalance)}</td>
-            <td className="num">{formatMoney(doc.paymentsAmount)}</td>
-            <td className="num">{formatMoney(doc.bankFee)}</td>
+            <td className="num">{formatMoney(previousBalance)}</td>
+            <td className="num">{formatMoney(paymentsAmount)}</td>
+            <td className="num">{formatMoney(bankFee)}</td>
             <td className="num">{formatMoney(carryOver)}</td>
             <td className="num">{formatMoney(totals.subtotal)}</td>
             <td className="num">{formatMoney(totals.taxTotal)}</td>
