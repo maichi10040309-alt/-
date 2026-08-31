@@ -2,10 +2,10 @@ import type { CompanyInfo, Customer, SalesDocument } from '../types';
 import { calcDocumentTotals } from '../utils/tax';
 import { formatDateJa, formatMoney } from '../utils/format';
 
-const MIN_ITEM_ROWS = 6;
+const MIN_ITEM_ROWS = 5;
 
-// 納品書はA4用紙1枚に「原本(上半分)」「控え(下半分)」を印刷し、
-// ミシン目や手切りで2つに分けて使う想定のレイアウト。
+// 納品書はA4用紙1枚に「原本(上半分)」「控え(下半分)」を印刷する。
+// 用紙自体にきりとり線が印刷済みのため、アプリ側では線を描画しない。
 export default function DeliveryNotePrint({
   doc,
   customer,
@@ -20,9 +20,6 @@ export default function DeliveryNotePrint({
   return (
     <div className="print-sheet delivery-a4-sheet">
       <DeliveryHalf variant="original" doc={doc} customer={customer} company={company} totals={totals} />
-      <div className="delivery-cut-line">
-        <span>✂ きりとり線</span>
-      </div>
       <DeliveryHalf variant="copy" doc={doc} customer={customer} company={company} totals={totals} />
     </div>
   );
@@ -43,13 +40,32 @@ function DeliveryHalf({
 }) {
   const title = variant === 'original' ? '納品書' : '納品書（控）';
   const blankRowCount = Math.max(0, MIN_ITEM_ROWS - doc.items.length);
+  const hasAddress = !!customer?.address1;
 
   return (
     <div className="delivery-half">
       <div className="delivery-header-row">
         <div className="delivery-customer-box">
-          <div className="delivery-customer-name">{customer?.name ?? '(得意先未設定)'} 様</div>
-          {doc.title && <div className="delivery-doc-title">件名: {doc.title}</div>}
+          {hasAddress && (
+            <div className="delivery-customer-address">
+              <div>〒{customer?.zip}</div>
+              <div>
+                {customer?.address1}
+                {customer?.address2}
+              </div>
+            </div>
+          )}
+          {(customer?.tel || customer?.fax) && (
+            <div className="delivery-customer-contact">
+              {customer?.tel && <span>Tel：{customer.tel}</span>}
+              {customer?.fax && <span>Fax：{customer.fax}</span>}
+            </div>
+          )}
+          <div className="delivery-customer-name-row">
+            <span className="delivery-customer-name">{customer?.name ?? '(得意先未設定)'}</span>
+            <span className="delivery-customer-suffix">御中</span>
+          </div>
+          <div className="delivery-customer-code-row">お客様番号　{customer?.code ?? ''}</div>
         </div>
         <div className="delivery-title-block">
           <div className="delivery-title-box">{title}</div>
@@ -80,6 +96,7 @@ function DeliveryHalf({
               TEL:{company.tel} {company.fax && `FAX:${company.fax}`}
             </div>
             {company.invoiceRegistrationNumber && <div>登録番号：{company.invoiceRegistrationNumber}</div>}
+            <div className="delivery-tag-box">{doc.deliveryTag || ' '}</div>
           </div>
           {company.sealImageDataUrl && (
             <img src={company.sealImageDataUrl} alt="会社印" className="delivery-seal" />

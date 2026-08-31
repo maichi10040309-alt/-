@@ -655,6 +655,30 @@ textarea:focus {
   gap: 8px;
 }
 
+/* 納品書の配送区分の選択肢編集 */
+.delivery-tag-options-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.delivery-tag-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+  max-width: 360px;
+}
+
+.delivery-tag-option-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.delivery-tag-option-item input {
+  flex: 1;
+}
+
 /* print */
 .print-toolbar {
   display: flex;
@@ -864,23 +888,6 @@ textarea:focus {
   padding: 4mm 2mm;
 }
 
-.delivery-cut-line {
-  position: relative;
-  height: 0;
-  border-top: 1px dashed #999;
-  text-align: center;
-}
-
-.delivery-cut-line span {
-  position: relative;
-  top: -7px;
-  background: white;
-  padding: 0 8px;
-  font-size: 9px;
-  color: #999;
-  letter-spacing: 0.1em;
-}
-
 .delivery-header-row {
   display: flex;
   gap: 10px;
@@ -891,11 +898,33 @@ textarea:focus {
   flex: 1;
   border: 1px solid var(--color-text);
   border-radius: 4px;
-  padding: 10px 14px;
+  padding: 8px 12px 6px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  min-height: 78px;
+  justify-content: center;
+  gap: 3px;
+  min-height: 92px;
+}
+
+.delivery-customer-address {
+  font-size: 9.5px;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+}
+
+.delivery-customer-contact {
+  display: flex;
+  gap: 14px;
+  font-size: 9.5px;
+  color: var(--color-text-muted);
+}
+
+.delivery-customer-name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
 }
 
 .delivery-customer-name {
@@ -903,10 +932,18 @@ textarea:focus {
   font-weight: 700;
 }
 
-.delivery-doc-title {
-  font-size: 10.5px;
+.delivery-customer-suffix {
+  font-size: 11px;
   color: var(--color-text-muted);
-  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.delivery-customer-code-row {
+  border-top: 1px solid var(--color-text);
+  margin-top: 3px;
+  padding-top: 3px;
+  font-size: 9.5px;
+  color: var(--color-text-muted);
 }
 
 .delivery-title-block {
@@ -971,6 +1008,10 @@ textarea:focus {
   flex: 1;
 }
 
+.delivery-company-text {
+  flex: 1;
+}
+
 .delivery-company-name {
   font-size: 12px;
   font-weight: 700;
@@ -978,10 +1019,21 @@ textarea:focus {
 }
 
 .delivery-seal {
-  width: 32px;
-  height: 32px;
+  width: 21mm;
+  height: 21mm;
   object-fit: contain;
   flex-shrink: 0;
+}
+
+.delivery-tag-box {
+  display: inline-block;
+  border: 1px solid var(--color-text);
+  border-radius: 3px;
+  padding: 1px 10px;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--color-text);
+  min-width: 40px;
 }
 
 .delivery-message-row {

@@ -51,6 +51,7 @@ export interface CompanyInfo {
   defaultTaxRate: TaxRate;
   taxRounding: 'floor' | 'round' | 'ceil';
   nextDocNumber: Partial<Record<DocumentType, number>>;
+  deliveryTagOptions: string[]; // 納品書の配送区分(直送・店頭・営業担当者名など)の選択肢
 }
 
 export type PriceTier = 1 | 2 | 3;
@@ -131,6 +132,7 @@ export interface SalesDocument {
   periodTo: string; // 合計請求書の対象期間(終了)
   previousBalance: number; // 合計請求書:前回繰越残高
   paymentsAmount: number; // 合計請求書:入金額(相殺した領収額)
+  deliveryTag: string; // 納品書の配送区分(直送・店頭・営業担当者名など、company.deliveryTagOptionsから選択)
   createdAt: string;
   updatedAt: string;
 }

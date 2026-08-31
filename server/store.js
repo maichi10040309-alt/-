@@ -24,6 +24,7 @@ function defaultCompany() {
     defaultTaxRate: 10,
     taxRounding: 'floor',
     nextDocNumber: {},
+    deliveryTagOptions: ['直送', '店頭'],
   };
 }
 
@@ -48,7 +49,8 @@ function load() {
       customers: Array.isArray(parsed.customers) ? parsed.customers : [],
       products: Array.isArray(parsed.products) ? parsed.products : [],
       documents: Array.isArray(parsed.documents) ? parsed.documents : [],
-      company: parsed.company ?? defaultCompany(),
+      // 古いデータファイルに後から追加した項目が無い場合があるため、既定値にマージする
+      company: { ...defaultCompany(), ...(parsed.company ?? {}) },
       counters: parsed.counters ?? { customer: 1, product: 1 },
     };
   } catch (err) {

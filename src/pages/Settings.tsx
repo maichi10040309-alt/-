@@ -56,6 +56,23 @@ export default function Settings() {
     reader.readAsDataURL(file);
   };
 
+  const updateDeliveryTagOption = (index: number, value: string) => {
+    setCompany((c) => {
+      if (!c) return c;
+      const next = [...c.deliveryTagOptions];
+      next[index] = value;
+      return { ...c, deliveryTagOptions: next };
+    });
+  };
+
+  const removeDeliveryTagOption = (index: number) => {
+    setCompany((c) => (c ? { ...c, deliveryTagOptions: c.deliveryTagOptions.filter((_, i) => i !== index) } : c));
+  };
+
+  const addDeliveryTagOption = () => {
+    setCompany((c) => (c ? { ...c, deliveryTagOptions: [...c.deliveryTagOptions, ''] } : c));
+  };
+
   return (
     <div>
       <PageHeader
@@ -148,6 +165,26 @@ export default function Settings() {
             印影のスキャン画像・写真(背景が白いもの推奨、PNG形式で背景透過なら仕上がりがきれいです)を登録すると、
             納品書などの印刷時に自動で印字されます。保存を押すまで反映されません。
           </p>
+        </div>
+
+        <div className="col-span-2 delivery-tag-options-row">
+          <div className="seal-upload-label">納品書の配送区分の選択肢</div>
+          <p className="hint">
+            納品書の作成画面で選べる区分です(直送・店頭・営業担当者名など、自由に追加・編集・削除できます)。
+          </p>
+          <div className="delivery-tag-options-list">
+            {company.deliveryTagOptions.map((opt, i) => (
+              <div key={i} className="delivery-tag-option-item">
+                <input value={opt} onChange={(e) => updateDeliveryTagOption(i, e.target.value)} placeholder="例: 直送" />
+                <button type="button" className="icon-btn danger" onClick={() => removeDeliveryTagOption(i)}>
+                  削除
+                </button>
+              </div>
+            ))}
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={addDeliveryTagOption}>
+            + 選択肢を追加
+          </button>
         </div>
 
         <div className="section-divider col-span-2">税設定</div>

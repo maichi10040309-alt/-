@@ -111,6 +111,7 @@ export default function BillingRun() {
         periodTo,
         previousBalance: balance?.balance ?? 0,
         paymentsAmount: 0,
+        deliveryTag: '',
         createdAt: now,
         updatedAt: now,
       };

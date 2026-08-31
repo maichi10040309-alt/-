@@ -32,6 +32,7 @@ const emptyDoc = (type: DocumentType): SalesDocument => {
     periodTo: '',
     previousBalance: 0,
     paymentsAmount: 0,
+    deliveryTag: '',
     createdAt: now,
     updatedAt: now,
   };
@@ -58,7 +59,7 @@ export default function DocumentEdit() {
     }
     api.documents
       .get(id!)
-      .then((d) => setDoc(d))
+      .then((d) => setDoc(d ? { ...d, deliveryTag: d.deliveryTag ?? '' } : d))
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [id, isNew, docType]);
@@ -197,6 +198,19 @@ export default function DocumentEdit() {
           <label>
             お支払期限
             <input type="date" value={doc.dueDate} onChange={(e) => set('dueDate', e.target.value)} />
+          </label>
+        )}
+        {docType === 'delivery' && (
+          <label>
+            配送区分
+            <select value={doc.deliveryTag} onChange={(e) => set('deliveryTag', e.target.value)}>
+              <option value="">(未設定)</option>
+              {company?.deliveryTagOptions?.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
           </label>
         )}
         <label className="col-span-2">
