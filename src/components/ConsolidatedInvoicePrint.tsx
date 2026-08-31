@@ -92,7 +92,7 @@ function ConsolidatedInvoicePage({
         </div>
 
         <div className="ci-title-block">
-          <div className="ci-title-box">請求　書</div>
+          <div className="ci-title-box">請求書</div>
           <div className="ci-meta-line">
             <span>{formatDateJa(doc.periodTo)}　締切分</span>
             <span className="ci-meta-no">No.　{doc.number}</span>
