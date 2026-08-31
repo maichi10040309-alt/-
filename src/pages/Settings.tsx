@@ -127,9 +127,30 @@ export default function Settings() {
             placeholder="T1234567890123"
           />
         </label>
+        <div className="section-divider col-span-2">振込先情報(請求書・合計請求書に印字)</div>
+        <label>
+          銀行名・支店名
+          <input
+            value={company.bankBranch}
+            onChange={(e) => set('bankBranch', e.target.value)}
+            placeholder="例: ○○銀行 ○○支店"
+          />
+        </label>
+        <label>
+          預金種別・口座番号
+          <input
+            value={company.bankAccount}
+            onChange={(e) => set('bankAccount', e.target.value)}
+            placeholder="例: 普通 1234567"
+          />
+        </label>
         <label className="col-span-2">
-          振込先情報(請求書に印字)
-          <textarea value={company.bankInfo} onChange={(e) => set('bankInfo', e.target.value)} rows={2} />
+          口座名義
+          <input
+            value={company.bankAccountHolder}
+            onChange={(e) => set('bankAccountHolder', e.target.value)}
+            placeholder="例: カ)○○ショウジ"
+          />
         </label>
 
         <div className="col-span-2 seal-upload-row">

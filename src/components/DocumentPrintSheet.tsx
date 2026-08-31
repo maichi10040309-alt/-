@@ -139,10 +139,12 @@ export default function DocumentPrintSheet({
             </table>
           )}
 
-          {docType === 'invoice' && company.bankInfo && (
+          {docType === 'invoice' && (company.bankBranch || company.bankAccount || company.bankAccountHolder) && (
             <div className="print-bank-info">
               <div className="section-label">お振込先</div>
-              <div>{company.bankInfo}</div>
+              <div>{company.bankBranch}</div>
+              <div>{company.bankAccount}</div>
+              <div>{company.bankAccountHolder}</div>
             </div>
           )}
         </>

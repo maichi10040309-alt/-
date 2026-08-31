@@ -18,7 +18,9 @@ function defaultCompany() {
     email: 'info@example.co.jp',
     invoiceRegistrationNumber: 'T1234567890123',
     representativeName: '代表取締役 山田 太郎',
-    bankInfo: 'サンプル銀行 本店営業部 普通 1234567 カ)サンプルショウジ',
+    bankBranch: 'サンプル銀行 本店営業部',
+    bankAccount: '普通 1234567',
+    bankAccountHolder: 'カ)サンプルショウジ',
     sealImageDataUrl: '',
     logoDataUrl: '',
     defaultTaxRate: 10,
@@ -38,6 +40,20 @@ function defaultData() {
   };
 }
 
+// 旧バージョンでは振込先を bankInfo という1行の自由記述で保存していた。
+// 新しい3段表示(銀行名支店名/口座種別・番号/口座名義)フィールドが未設定で、
+// 旧データに bankInfo が残っている場合は、内容を失わないよう1段目に引き継ぐ。
+function migrateCompany(merged, rawCompany) {
+  const hasNewBankFields =
+    rawCompany && ('bankBranch' in rawCompany || 'bankAccount' in rawCompany || 'bankAccountHolder' in rawCompany);
+  if (!hasNewBankFields && rawCompany?.bankInfo) {
+    merged.bankBranch = rawCompany.bankInfo;
+    merged.bankAccount = '';
+    merged.bankAccountHolder = '';
+  }
+  return merged;
+}
+
 function load() {
   if (!existsSync(DATA_FILE)) {
     return defaultData();
@@ -50,7 +66,7 @@ function load() {
       products: Array.isArray(parsed.products) ? parsed.products : [],
       documents: Array.isArray(parsed.documents) ? parsed.documents : [],
       // 古いデータファイルに後から追加した項目が無い場合があるため、既定値にマージする
-      company: { ...defaultCompany(), ...(parsed.company ?? {}) },
+      company: migrateCompany({ ...defaultCompany(), ...(parsed.company ?? {}) }, parsed.company),
       counters: parsed.counters ?? { customer: 1, product: 1 },
     };
   } catch (err) {

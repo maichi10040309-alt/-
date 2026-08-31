@@ -1,8 +1,10 @@
-import type { CompanyInfo, Customer, SalesDocument } from '../types';
+import type { CompanyInfo, Customer, DocumentItem, SalesDocument } from '../types';
 import { calcDocumentTotals } from '../utils/tax';
 import { formatDateJa, formatMoney } from '../utils/format';
 
-const MIN_ITEM_ROWS = 5;
+// 明細欄は自動で伸縮させず、1ページあたりの行数をあらかじめ固定する。
+// これを超える明細がある場合は2ページ目以降(A4用紙を追加)に分けて印刷する。
+const ROWS_PER_PAGE = 5;
 
 // 納品書はA4用紙1枚に「原本(上半分)」「控え(下半分)」を印刷する。
 // 用紙自体にきりとり線が印刷済みのため、アプリ側では線を描画しない。
@@ -16,12 +18,38 @@ export default function DeliveryNotePrint({
   company: CompanyInfo;
 }) {
   const totals = calcDocumentTotals(doc.items, company.taxRounding);
+  const totalPages = Math.max(1, Math.ceil(doc.items.length / ROWS_PER_PAGE));
+  const pages = Array.from({ length: totalPages }, (_, i) =>
+    doc.items.slice(i * ROWS_PER_PAGE, (i + 1) * ROWS_PER_PAGE),
+  );
 
   return (
-    <div className="print-sheet delivery-a4-sheet">
-      <DeliveryHalf variant="original" doc={doc} customer={customer} company={company} totals={totals} />
-      <DeliveryHalf variant="copy" doc={doc} customer={customer} company={company} totals={totals} />
-    </div>
+    <>
+      {pages.map((pageItems, i) => (
+        <div className="print-sheet delivery-a4-sheet" key={i}>
+          <DeliveryHalf
+            variant="original"
+            doc={doc}
+            customer={customer}
+            company={company}
+            totals={totals}
+            pageItems={pageItems}
+            pageNumber={i + 1}
+            totalPages={totalPages}
+          />
+          <DeliveryHalf
+            variant="copy"
+            doc={doc}
+            customer={customer}
+            company={company}
+            totals={totals}
+            pageItems={pageItems}
+            pageNumber={i + 1}
+            totalPages={totalPages}
+          />
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -31,15 +59,21 @@ function DeliveryHalf({
   customer,
   company,
   totals,
+  pageItems,
+  pageNumber,
+  totalPages,
 }: {
   variant: 'original' | 'copy';
   doc: SalesDocument;
   customer: Customer | undefined;
   company: CompanyInfo;
   totals: ReturnType<typeof calcDocumentTotals>;
+  pageItems: DocumentItem[];
+  pageNumber: number;
+  totalPages: number;
 }) {
   const title = variant === 'original' ? '納品書' : '納品書（控）';
-  const blankRowCount = Math.max(0, MIN_ITEM_ROWS - doc.items.length);
+  const blankRowCount = Math.max(0, ROWS_PER_PAGE - pageItems.length);
   const hasAddress = !!customer?.address1;
 
   return (
@@ -81,7 +115,9 @@ function DeliveryHalf({
               </tr>
             </tbody>
           </table>
-          <div className="delivery-page-indicator">Page. 1 / 1</div>
+          <div className="delivery-page-indicator">
+            Page. {pageNumber} / {totalPages}
+          </div>
         </div>
       </div>
 
@@ -96,7 +132,7 @@ function DeliveryHalf({
               TEL:{company.tel} {company.fax && `FAX:${company.fax}`}
             </div>
             {company.invoiceRegistrationNumber && <div>登録番号：{company.invoiceRegistrationNumber}</div>}
-            <div className="delivery-tag-box">{doc.deliveryTag || ' '}</div>
+            <div className="delivery-tag-box">{doc.deliveryTag || ' '}</div>
           </div>
           {doc.paid && <div className="delivery-paid-mark">入金済</div>}
           {company.sealImageDataUrl && (
@@ -148,7 +184,7 @@ function DeliveryHalf({
             </tr>
           </thead>
           <tbody>
-            {doc.items.map((item) => (
+            {pageItems.map((item) => (
               <tr key={item.id}>
                 <td>{item.name}</td>
                 <td className="num">{item.quantity}</td>

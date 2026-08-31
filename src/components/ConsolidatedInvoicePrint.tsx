@@ -1,9 +1,10 @@
-import type { CompanyInfo, Customer, SalesDocument } from '../types';
+import type { CompanyInfo, Customer, DocumentSourceSummary, SalesDocument } from '../types';
 import { calcDocumentTotals } from '../utils/tax';
-import { formatDateJa, formatMoney } from '../utils/format';
+import { formatDateJa, formatDateShort, formatMoney } from '../utils/format';
 
-// 明細が少ない場合でもA4用紙1枚分の分量になるよう、明細欄の最低行数を確保する。
-const MIN_ITEM_ROWS = 18;
+// 明細欄は自動で伸縮させず、1ページあたりの行数をあらかじめ固定する。
+// これを超える明細がある場合は2ページ目以降に分けて印刷する。
+const ROWS_PER_PAGE = 20;
 
 // 合計請求書(掛売り請求書)。ヒサゴの合計請求書用紙のレイアウトに合わせている。
 export default function ConsolidatedInvoicePrint({
@@ -15,6 +16,45 @@ export default function ConsolidatedInvoicePrint({
   customer: Customer | undefined;
   company: CompanyInfo;
 }) {
+  // 本機能追加前に発行した合計請求書には sourceSummaries が存在しないため空配列にフォールバックする
+  const sources = doc.sourceSummaries ?? [];
+  const totalPages = Math.max(1, Math.ceil(sources.length / ROWS_PER_PAGE));
+  const pages = Array.from({ length: totalPages }, (_, i) =>
+    sources.slice(i * ROWS_PER_PAGE, (i + 1) * ROWS_PER_PAGE),
+  );
+
+  return (
+    <>
+      {pages.map((pageSources, i) => (
+        <ConsolidatedInvoicePage
+          key={i}
+          doc={doc}
+          customer={customer}
+          company={company}
+          pageSources={pageSources}
+          pageNumber={i + 1}
+          totalPages={totalPages}
+        />
+      ))}
+    </>
+  );
+}
+
+function ConsolidatedInvoicePage({
+  doc,
+  customer,
+  company,
+  pageSources,
+  pageNumber,
+  totalPages,
+}: {
+  doc: SalesDocument;
+  customer: Customer | undefined;
+  company: CompanyInfo;
+  pageSources: DocumentSourceSummary[];
+  pageNumber: number;
+  totalPages: number;
+}) {
   const totals = calcDocumentTotals(doc.items, company.taxRounding);
   const previousBalance = doc.previousBalance ?? 0;
   const paymentsAmount = doc.paymentsAmount ?? 0;
@@ -23,9 +63,8 @@ export default function ConsolidatedInvoicePrint({
   const carryOver = previousBalance - paymentsAmount - bankFee;
   const currentBilling = carryOver + totals.grandTotal;
   const hasAddress = !!customer?.address1;
-  // 本機能追加前に発行した合計請求書には sourceSummaries が存在しないため空配列にフォールバックする
-  const sources = doc.sourceSummaries ?? [];
-  const blankRowCount = Math.max(0, MIN_ITEM_ROWS - sources.length);
+  const blankRowCount = Math.max(0, ROWS_PER_PAGE - pageSources.length);
+  const hasBankInfo = company.bankBranch || company.bankAccount || company.bankAccountHolder;
 
   return (
     <div className="print-sheet ci-sheet">
@@ -58,6 +97,9 @@ export default function ConsolidatedInvoicePrint({
             <span>{formatDateJa(doc.periodTo)}　締切分</span>
             <span className="ci-meta-no">No.　{doc.number}</span>
           </div>
+          <div className="ci-page-indicator">
+            Page. {pageNumber} / {totalPages}
+          </div>
         </div>
       </div>
 
@@ -74,7 +116,13 @@ export default function ConsolidatedInvoicePrint({
               TEL:{company.tel} {company.fax && `FAX:${company.fax}`}
             </div>
             {company.invoiceRegistrationNumber && <div>登録番号：{company.invoiceRegistrationNumber}</div>}
-            {company.bankInfo && <div className="ci-bank-line">お振込先：{company.bankInfo}</div>}
+            {hasBankInfo && (
+              <div className="ci-bank-block">
+                <div>お振込先：{company.bankBranch}</div>
+                <div>{company.bankAccount}</div>
+                <div>{company.bankAccountHolder}</div>
+              </div>
+            )}
           </div>
           {company.sealImageDataUrl && (
             <img src={company.sealImageDataUrl} alt="会社印" className="ci-seal" />
@@ -155,9 +203,9 @@ export default function ConsolidatedInvoicePrint({
             </tr>
           </thead>
           <tbody>
-            {sources.map((s, i) => (
+            {pageSources.map((s, i) => (
               <tr key={`${s.number}-${i}`}>
-                <td>{formatDateJa(s.date)}</td>
+                <td>{formatDateShort(s.date)}</td>
                 <td>{s.number}</td>
                 <td>{s.title}</td>
                 <td className="num">1</td>

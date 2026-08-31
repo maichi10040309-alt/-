@@ -703,9 +703,10 @@ textarea:focus {
   break-after: auto;
 }
 
-/* 納品書(A4原本+控え)は既にページ全体の高さを使い切っているため、
+/* 納品書(A4原本+控え)・合計請求書はページ全体の高さいっぱいまで明細行数を確保しているため、
    余白を足すとページ内に収まらず1件で2ページに割れてしまう。ここで打ち消す。 */
-.print-batch-item:has(.delivery-a4-sheet) {
+.print-batch-item:has(.delivery-a4-sheet),
+.print-batch-item:has(.ci-sheet) {
   margin-bottom: 0;
 }
 
@@ -878,6 +879,12 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   height: 285mm; /* A4高さ297mm - 上下余白(printPaper.tsの@page margin 4mm×2)分 */
+}
+
+/* 明細が1ページの行数(ROWS_PER_PAGE)を超える場合、納品書は複数のA4用紙に分割される。
+   2枚目以降は必ず新しいページから印刷する。 */
+.delivery-a4-sheet + .delivery-a4-sheet {
+  break-before: page;
 }
 
 .delivery-half {
@@ -1056,14 +1063,11 @@ textarea:focus {
 }
 
 .delivery-items-row {
-  flex: 1;
-  min-height: 0;
   margin-bottom: 5px;
 }
 
 .delivery-items-table {
   width: 100%;
-  height: 100%;
   border-collapse: collapse;
   font-size: 10.5px;
   table-layout: fixed;
@@ -1074,6 +1078,8 @@ textarea:focus {
   border: 1px solid var(--color-border);
   padding: 2px 5px;
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .delivery-items-table th {
@@ -1171,10 +1177,13 @@ textarea:focus {
  */
 .ci-sheet {
   max-width: 780px;
-  height: 277mm; /* A4高さ297mm - 上下余白(printPaper.tsの@page margin 10mm×2)分 */
   padding: 6mm 4mm;
-  display: flex;
-  flex-direction: column;
+}
+
+/* 明細が1ページの行数(ROWS_PER_PAGE)を超える場合、合計請求書は複数ページに分割される。
+   2枚目以降は必ず新しいページから印刷する。 */
+.ci-sheet + .ci-sheet {
+  break-before: page;
 }
 
 .ci-header-row {
@@ -1236,6 +1245,13 @@ textarea:focus {
 .ci-title-block {
   width: 240px;
   flex-shrink: 0;
+}
+
+.ci-page-indicator {
+  text-align: right;
+  font-size: 9px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
 }
 
 .ci-title-box {
@@ -1323,8 +1339,9 @@ textarea:focus {
   color: var(--color-text);
 }
 
-.ci-bank-line {
+.ci-bank-block {
   margin-top: 2px;
+  line-height: 1.4;
 }
 
 .ci-seal {
@@ -1383,14 +1400,8 @@ textarea:focus {
   font-weight: 800;
 }
 
-.ci-items-row {
-  flex: 1;
-  min-height: 0;
-}
-
 .ci-items-table {
   width: 100%;
-  height: 100%;
   border-collapse: collapse;
   font-size: 10.5px;
   table-layout: fixed;
@@ -1401,6 +1412,8 @@ textarea:focus {
   border: 1px solid var(--color-border);
   padding: 3px 6px;
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .ci-items-table th {
@@ -1411,6 +1424,7 @@ textarea:focus {
 .ci-items-table .col-date,
 .ci-items-table .col-number {
   width: 11%;
+  white-space: nowrap;
 }
 
 .ci-items-table .col-qty,

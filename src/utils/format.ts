@@ -24,6 +24,13 @@ export function formatDateJa(iso: string): string {
   return `${y}年${Number(m)}月${Number(d)}日`;
 }
 
+// 明細表など列幅が狭い箇所向けの短縮表記(例: 2026/8/15)
+export function formatDateShort(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${y}/${Number(m)}/${Number(d)}`;
+}
+
 export function addDays(iso: string, days: number): string {
   const d = new Date(iso);
   d.setDate(d.getDate() + days);

@@ -45,7 +45,9 @@ export interface CompanyInfo {
   email: string;
   invoiceRegistrationNumber: string; // 適格請求書発行事業者登録番号
   representativeName: string;
-  bankInfo: string; // 振込先情報
+  bankBranch: string; // 振込先:銀行名・支店名
+  bankAccount: string; // 振込先:預金種別・口座番号
+  bankAccountHolder: string; // 振込先:口座名義
   sealImageDataUrl: string; // 印影画像(任意)
   logoDataUrl: string; // ロゴ画像(任意)
   defaultTaxRate: TaxRate;
