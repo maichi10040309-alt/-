@@ -572,6 +572,28 @@ textarea:focus {
   margin-bottom: 8px;
 }
 
+.legacy-import-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.legacy-import-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.legacy-import-error {
+  color: var(--color-danger);
+}
+
+@media (max-width: 900px) {
+  .legacy-import-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

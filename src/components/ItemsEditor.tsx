@@ -137,6 +137,7 @@ export default function ItemsEditor({
                 >
                   <option value={10}>10%</option>
                   <option value={8}>8%(軽)</option>
+                  <option value={5}>5%(旧税率)</option>
                   <option value={0}>非課税</option>
                 </select>
               </td>

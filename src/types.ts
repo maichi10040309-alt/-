@@ -1,6 +1,6 @@
 // ドメイン型定義
 
-export type TaxRate = 0 | 8 | 10;
+export type TaxRate = 0 | 5 | 8 | 10; // 5%は旧税率(過去データ取り込み用)
 
 export type DocumentType =
   | 'quotation' // 見積書

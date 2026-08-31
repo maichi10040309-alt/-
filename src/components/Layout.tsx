@@ -13,6 +13,7 @@ const navItems = [
   { to: '/receivables', label: '売掛金一覧' },
   { to: '/reports', label: '売上集計・分析' },
   { to: '/settings', label: '設定' },
+  { to: '/legacy-import', label: '過去データの取り込み' },
 ];
 
 export default function Layout() {

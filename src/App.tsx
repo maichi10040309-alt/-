@@ -14,6 +14,7 @@ import BillingRun from './pages/BillingRun';
 import Receivables from './pages/Receivables';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import LegacyImport from './pages/LegacyImport';
 import { api } from './api/client';
 
 type BootState = 'checking' | 'ready' | 'error';
@@ -70,6 +71,7 @@ function App() {
           <Route path="/receivables" element={<Receivables />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/legacy-import" element={<LegacyImport />} />
         </Route>
       </Routes>
     </HashRouter>

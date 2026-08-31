@@ -121,10 +121,17 @@ function makeCollection(name, sortByCode) {
       return record;
     },
     bulkPut(records) {
+      // 過去データ一括取り込みなど件数が多い場合、件数ごとにfindIndexで線形探索すると
+      // 全体でO(件数×既存件数)になり大量データで極端に遅くなるため、事前にMapで索引化する
+      const indexById = new Map(state[name].map((r, i) => [r.id, i]));
       for (const record of records) {
-        const idx = state[name].findIndex((r) => r.id === record.id);
-        if (idx >= 0) state[name][idx] = record;
-        else state[name].push(record);
+        const idx = indexById.get(record.id);
+        if (idx !== undefined) {
+          state[name][idx] = record;
+        } else {
+          indexById.set(record.id, state[name].length);
+          state[name].push(record);
+        }
       }
       persist();
       return records.length;
