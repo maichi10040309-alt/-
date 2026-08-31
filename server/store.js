@@ -40,16 +40,33 @@ function defaultData() {
   };
 }
 
-// 旧バージョンでは振込先を bankInfo という1行の自由記述で保存していた。
+// 旧バージョンの1行の振込先自由記述(例:「○○銀行 ○○支店 普通 1234567 カ)○○ショウジ」)を、
+// 「普通/当座/貯蓄 + 口座番号」のパターンを手がかりに 銀行名支店名/口座種別・番号/口座名義 の3つに分割する。
+// パターンが見つからない場合は内容を失わないよう全て1段目に入れる。
+function splitLegacyBankInfo(text) {
+  const match = text.match(/(普通|当座|貯蓄)[\s　]*([0-9０-９]+)/);
+  if (!match) {
+    return { bankBranch: text, bankAccount: '', bankAccountHolder: '' };
+  }
+  const start = match.index;
+  const end = start + match[0].length;
+  return {
+    bankBranch: text.slice(0, start).trim(),
+    bankAccount: text.slice(start, end).trim(),
+    bankAccountHolder: text.slice(end).trim(),
+  };
+}
+
 // 新しい3段表示(銀行名支店名/口座種別・番号/口座名義)フィールドが未設定で、
-// 旧データに bankInfo が残っている場合は、内容を失わないよう1段目に引き継ぐ。
+// 旧データに bankInfo が残っている場合は、内容を失わないよう自動分割して引き継ぐ。
 function migrateCompany(merged, rawCompany) {
   const hasNewBankFields =
     rawCompany && ('bankBranch' in rawCompany || 'bankAccount' in rawCompany || 'bankAccountHolder' in rawCompany);
   if (!hasNewBankFields && rawCompany?.bankInfo) {
-    merged.bankBranch = rawCompany.bankInfo;
-    merged.bankAccount = '';
-    merged.bankAccountHolder = '';
+    const split = splitLegacyBankInfo(rawCompany.bankInfo);
+    merged.bankBranch = split.bankBranch;
+    merged.bankAccount = split.bankAccount;
+    merged.bankAccountHolder = split.bankAccountHolder;
   }
   return merged;
 }
