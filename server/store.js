@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -94,15 +95,67 @@ function load() {
 
 const state = load();
 
-function persist() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+// データ件数が多くなると保存対象のJSONが数十MBになり、同期書き込み(writeFileSync)では
+// 書き込み中Node.jsのイベントループ全体が止まってしまい、1件保存するだけの操作でも
+// 画面の応答が数秒止まって「重い」と感じる原因になっていた。
+// そのため実際のディスク書き込みは非同期で行い、短時間に連続した変更は1回にまとめる
+// (デバウンス)ことで、API呼び出し自体は即座に応答を返せるようにする。
+const PERSIST_DEBOUNCE_MS = 200;
+let persistTimer = null;
+let persistDirty = false;
+let persistInFlight = null;
+
+async function flushToDisk() {
+  if (!persistDirty) return;
+  persistDirty = false;
+  if (!existsSync(DATA_DIR)) await mkdir(DATA_DIR, { recursive: true });
   const tmpFile = DATA_FILE + '.tmp';
-  writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf-8');
-  renameSync(tmpFile, DATA_FILE);
+  const json = JSON.stringify(state);
+  await writeFile(tmpFile, json, 'utf-8');
+  await rename(tmpFile, DATA_FILE);
 }
 
-// 初回起動時にファイルを作成しておく
-if (!existsSync(DATA_FILE)) persist();
+function schedulePersist() {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    persistInFlight = flushToDisk()
+      .catch((err) => console.error('データの保存に失敗しました:', err))
+      .finally(() => {
+        persistInFlight = null;
+        // 書き込み中にさらに変更があった場合は続けて保存する
+        if (persistDirty) schedulePersist();
+      });
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+function persist() {
+  persistDirty = true;
+  schedulePersist();
+}
+
+// サーバー終了時に保留中の変更を確実に書き込む
+async function flushAndExit() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  try {
+    await persistInFlight;
+    await flushToDisk();
+  } catch (err) {
+    console.error('終了時のデータ保存に失敗しました:', err);
+  }
+  process.exit(0);
+}
+process.on('SIGINT', flushAndExit);
+process.on('SIGTERM', flushAndExit);
+
+// 初回起動時にファイルを作成しておく(こちらは即座に存在させたいので同期書き込みのまま)
+if (!existsSync(DATA_FILE)) {
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+  writeFileSync(DATA_FILE, JSON.stringify(state), 'utf-8');
+}
 
 function makeCollection(name, sortByCode) {
   return {
