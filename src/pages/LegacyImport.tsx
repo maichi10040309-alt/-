@@ -16,7 +16,7 @@ import {
 } from '../utils/legacyDocumentImport';
 import { DOCUMENT_TYPE_LABEL, type Customer, type DocumentType } from '../types';
 
-const IMPORT_TARGETS: DocumentType[] = ['quotation', 'delivery', 'invoice', 'receipt'];
+const IMPORT_TARGETS: DocumentType[] = ['quotation', 'delivery', 'invoice', 'consolidated_invoice', 'receipt'];
 const CHUNK_SIZE = 2000;
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -232,12 +232,15 @@ export default function LegacyImport() {
     <div>
       <PageHeader
         title="過去データの取り込み"
-        subtitle="他の販売管理ソフトから書き出したCSVを、見積書・納品書・請求書・領収証として取り込みます"
+        subtitle="他の販売管理ソフトから書き出したCSVを、見積書・納品書・請求書・合計請求書・領収証として取り込みます"
       />
       <div className="card">
         <p className="hint">
           「伝票番号・得意先情報・明細」を持つCSV(1明細=1行の形式)に対応しています。同じ得意先コードまたは同じ名前の得意先が既に登録されていれば自動でひも付け、なければ新しく得意先を作成します。
           件数が多いファイル(数万件)の取り込みには数十秒〜数分かかる場合があります。念のため、取り込み前に「設定」画面からバックアップを保存しておくことをおすすめします。
+        </p>
+        <p className="hint">
+          「請求書」と「合計請求書」はCSVの形式が同じ場合が多いため、旧ソフト側でどちらの帳票として発行していたかに合わせて、取り込み先のカードを選んでください。
         </p>
         <p className="hint">
           同じCSVを2回取り込むと伝票が重複しますのでご注意ください。伝票番号は元のCSVの値をそのまま引き継ぎます。

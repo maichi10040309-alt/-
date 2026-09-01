@@ -349,12 +349,26 @@ export function buildSalesDocument(
   customerId: string,
   now: string,
 ): SalesDocument {
+  const issueDate = row.issueDate || now.slice(0, 10);
+  // 合計請求書は本来「元となる納品書ごとの内訳」を明細表に表示するが、
+  // 旧ソフトのCSVには元の納品書との対応関係が無いため、明細行をそのまま
+  // 内訳の代わりとして表示できるようにしておく(印刷時に空欄にならないため)
+  const sourceSummaries =
+    docType === 'consolidated_invoice'
+      ? row.items.map((item) => ({
+          date: issueDate,
+          number: row.number,
+          title: item.name,
+          subtotal: item.quantity * item.unitPrice,
+        }))
+      : [];
+
   return {
     id: newId(),
     type: docType,
     number: row.number,
     customerId,
-    issueDate: row.issueDate || now.slice(0, 10),
+    issueDate,
     validUntilDate: '',
     dueDate: '',
     title: row.title,
@@ -371,7 +385,7 @@ export function buildSalesDocument(
     paid: false,
     paidDate: '',
     bankFee: 0,
-    sourceSummaries: [],
+    sourceSummaries,
     createdAt: now,
     updatedAt: now,
   };
