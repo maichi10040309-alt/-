@@ -108,6 +108,7 @@ export default function DocumentPrintSheet({
                 <th>単価</th>
                 <th>税率</th>
                 <th>金額</th>
+                <th>備考</th>
               </tr>
             </thead>
             <tbody>
@@ -119,6 +120,7 @@ export default function DocumentPrintSheet({
                   <td className="num">{formatMoney(item.unitPrice)}</td>
                   <td className="num">{item.taxRate === 0 ? '非課税' : `${item.taxRate}%`}</td>
                   <td className="num">{formatMoney(item.quantity * item.unitPrice)}</td>
+                  <td>{item.note}</td>
                 </tr>
               ))}
             </tbody>

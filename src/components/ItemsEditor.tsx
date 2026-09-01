@@ -30,6 +30,7 @@ export default function ItemsEditor({
         quantity: 1,
         unitPrice: 0,
         taxRate: 10,
+        note: '',
       },
     ]);
   };
@@ -74,6 +75,7 @@ export default function ItemsEditor({
             <th style={{ width: 110 }}>単価</th>
             <th style={{ width: 90 }}>税率</th>
             <th style={{ width: 110 }}>金額</th>
+            <th style={{ width: 130 }}>備考</th>
             <th style={{ width: 70 }}></th>
           </tr>
         </thead>
@@ -142,6 +144,14 @@ export default function ItemsEditor({
                 </select>
               </td>
               <td className="amount-cell">{formatMoney(itemAmount(item))}</td>
+              <td>
+                <input
+                  type="text"
+                  value={item.note}
+                  onChange={(e) => update(item.id, { note: e.target.value })}
+                  placeholder="備考"
+                />
+              </td>
               <td>
                 <button type="button" className="icon-btn danger" onClick={() => removeRow(item.id)}>
                   削除

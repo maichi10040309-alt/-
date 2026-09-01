@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
 import ItemsEditor from '../components/ItemsEditor';
 import TotalsBox from '../components/TotalsBox';
+import CustomerPicker from '../components/CustomerPicker';
 import { newId } from '../utils/id';
 import { todayISO, addDays } from '../utils/format';
 import { calcDocumentTotals } from '../utils/tax';
@@ -192,14 +193,7 @@ export default function DocumentEdit() {
       <div className="card form-grid">
         <label>
           得意先 *
-          <select value={doc.customerId} onChange={(e) => set('customerId', e.target.value)}>
-            <option value="">選択してください</option>
-            {customers?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} {c.name}
-              </option>
-            ))}
-          </select>
+          <CustomerPicker customers={customers ?? []} value={doc.customerId} onChange={(id) => set('customerId', id)} />
         </label>
         <label>
           発行日
@@ -244,10 +238,12 @@ export default function DocumentEdit() {
             )}
           </label>
         )}
-        <label className="col-span-2">
-          件名
-          <input value={doc.title} onChange={(e) => set('title', e.target.value)} placeholder="例: ○○商品一式" />
-        </label>
+        {docType !== 'delivery' && (
+          <label className="col-span-2">
+            件名
+            <input value={doc.title} onChange={(e) => set('title', e.target.value)} placeholder="例: ○○商品一式" />
+          </label>
+        )}
       </div>
 
       <div className="card">

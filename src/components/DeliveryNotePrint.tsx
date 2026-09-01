@@ -191,7 +191,7 @@ function DeliveryHalf({
                 <td>{item.unit}</td>
                 <td className="num">{formatMoney(item.unitPrice)}</td>
                 <td className="num">{formatMoney(item.quantity * item.unitPrice)}</td>
-                <td></td>
+                <td>{item.note}</td>
               </tr>
             ))}
             {Array.from({ length: blankRowCount }).map((_, i) => (

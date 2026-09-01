@@ -3,6 +3,7 @@ import { useLiveQuery } from '../api/useLiveQuery';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import PageHeader from '../components/PageHeader';
+import CustomerPicker from '../components/CustomerPicker';
 import { newId } from '../utils/id';
 import { todayISO, addDays, formatDateJa, formatMoney } from '../utils/format';
 import { calcDocumentTotals } from '../utils/tax';
@@ -147,14 +148,12 @@ export default function BillingRun() {
       <div className="card form-grid">
         <label>
           得意先
-          <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-            <option value="">全得意先</option>
-            {customers?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} {c.name}
-              </option>
-            ))}
-          </select>
+          <CustomerPicker
+            customers={customers ?? []}
+            value={customerId}
+            onChange={setCustomerId}
+            placeholder="全得意先(未入力で全件対象)"
+          />
         </label>
         <label>
           対象期間(開始)

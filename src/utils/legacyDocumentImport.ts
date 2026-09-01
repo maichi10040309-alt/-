@@ -145,17 +145,15 @@ function parseItemLineCsv(csvText: string): LegacyParseResult {
         unitPrice = unitPrice / (1 + rate / 100);
       }
 
-      const itemNote = val(r, idx.itemNote);
-      const name = itemNote ? `${productName}（${itemNote}）` : productName;
-
       items.push({
         id: newId(),
         productId: null,
-        name,
+        name: productName,
         unit: val(r, idx.unit),
         quantity: quantity || 1,
         unitPrice: Math.round(unitPrice),
         taxRate: rate,
+        note: val(r, idx.itemNote),
       });
     }
     if (items.length === 0) continue;
@@ -257,6 +255,7 @@ function parseReceiptCsv(csvText: string): LegacyParseResult {
           unit: '式',
           quantity: 1,
           unitPrice: total,
+          note: '',
           taxRate: 0,
         },
       ],

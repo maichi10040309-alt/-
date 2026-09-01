@@ -108,6 +108,7 @@ export interface DocumentItem {
   quantity: number;
   unitPrice: number;
   taxRate: TaxRate;
+  note: string; // 明細行ごとの備考
 }
 
 export interface TaxSummaryEntry {
