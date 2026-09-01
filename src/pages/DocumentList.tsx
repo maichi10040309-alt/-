@@ -112,6 +112,14 @@ export default function DocumentList() {
     });
   };
 
+  const toggleGroup = (docs: SalesDocument[], allSelected: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      docs.forEach((d) => (allSelected ? next.delete(d.id) : next.add(d.id)));
+      return next;
+    });
+  };
+
   const handleDeleteSelected = async () => {
     if (!confirm(`選択した${selected.size}件の${label}を削除します。よろしいですか?`)) return;
     await api.documents.bulkDelete(Array.from(selected));
@@ -326,7 +334,14 @@ export default function DocumentList() {
             {groupedRows.map((group, groupIdx) => (
               <Fragment key={`group-${groupIdx}`}>
                 <tr className="doc-date-group-row">
-                  <td colSpan={showPaidColumn ? 8 : 7}>{group.date ? formatDateJa(group.date) : '(発行日未設定)'}</td>
+                  <td className="select-col">
+                    <input
+                      type="checkbox"
+                      checked={group.docs.every((d) => selected.has(d.id))}
+                      onChange={() => toggleGroup(group.docs, group.docs.every((d) => selected.has(d.id)))}
+                    />
+                  </td>
+                  <td colSpan={showPaidColumn ? 7 : 6}>{group.date ? formatDateJa(group.date) : '(発行日未設定)'}</td>
                 </tr>
                 {group.docs.map((d) => {
                   const totals = totalsCache.get(d.id) ?? calcDocumentTotals(d.items, rounding);
