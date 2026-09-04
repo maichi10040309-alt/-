@@ -1,11 +1,16 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { writeFile, rename, mkdir } from 'node:fs/promises';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { writeFile, rename, mkdir, readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
 const DATA_FILE = join(DATA_DIR, 'db.json');
+// 手違いでdb.json自体が消えてしまった場合(誤削除・別フォルダでの起動など)に備え、
+// 日次の自動バックアップを保存しておくフォルダ。ここに直近の状態を残しておくことで、
+// 万一メインのデータファイルが無くなっていても復元できるようにする。
+const BACKUP_DIR = join(DATA_DIR, 'backups');
+const BACKUP_RETENTION_DAYS = 30;
 
 function defaultCompany() {
   return {
@@ -72,23 +77,64 @@ function migrateCompany(merged, rawCompany) {
   return merged;
 }
 
+function normalizeLoaded(parsed) {
+  return {
+    customers: Array.isArray(parsed.customers) ? parsed.customers : [],
+    products: Array.isArray(parsed.products) ? parsed.products : [],
+    documents: Array.isArray(parsed.documents) ? parsed.documents : [],
+    // 古いデータファイルに後から追加した項目が無い場合があるため、既定値にマージする
+    company: migrateCompany({ ...defaultCompany(), ...(parsed.company ?? {}) }, parsed.company),
+    counters: parsed.counters ?? { customer: 1, product: 1 },
+  };
+}
+
+// バックアップフォルダ内の db-YYYY-MM-DD.json を日付の古い順に返す
+function listBackupFiles() {
+  if (!existsSync(BACKUP_DIR)) return [];
+  return readdirSync(BACKUP_DIR)
+    .filter((f) => /^db-\d{4}-\d{2}-\d{2}\.json$/.test(f))
+    .sort();
+}
+
+// メインのデータファイル(db.json)が見つからない、または壊れている場合に、
+// 直近の自動バックアップから復元を試みる。復元できた場合のみオブジェクトを返す。
+function tryRestoreFromBackup(reason) {
+  const files = listBackupFiles();
+  if (files.length === 0) return null;
+  const latest = files[files.length - 1];
+  try {
+    const raw = readFileSync(join(BACKUP_DIR, latest), 'utf-8');
+    const parsed = JSON.parse(raw);
+    console.error(
+      `【重要】${reason}。直近のバックアップ(${latest})からデータを復元しました。` +
+        '復元されたデータが古い・想定と違う場合は、すぐにサーバーを停止し server/data フォルダの内容(db.json および backups フォルダ)をご確認ください。',
+    );
+    return normalizeLoaded(parsed);
+  } catch (err) {
+    console.error('バックアップからの復元にも失敗しました:', err);
+    return null;
+  }
+}
+
 function load() {
   if (!existsSync(DATA_FILE)) {
+    const restored = tryRestoreFromBackup('データファイル(server/data/db.json)が見つかりませんでした');
+    if (restored) return restored;
+    console.error(
+      '【注意】データファイルが存在せず、バックアップも見つからなかったため、新しい空のデータベースを作成します。' +
+        '以前のデータがあったはずの場合は、正しいフォルダでサーバーを起動しているかご確認ください。',
+    );
     return defaultData();
   }
   try {
     const raw = readFileSync(DATA_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
-    return {
-      customers: Array.isArray(parsed.customers) ? parsed.customers : [],
-      products: Array.isArray(parsed.products) ? parsed.products : [],
-      documents: Array.isArray(parsed.documents) ? parsed.documents : [],
-      // 古いデータファイルに後から追加した項目が無い場合があるため、既定値にマージする
-      company: migrateCompany({ ...defaultCompany(), ...(parsed.company ?? {}) }, parsed.company),
-      counters: parsed.counters ?? { customer: 1, product: 1 },
-    };
+    return normalizeLoaded(parsed);
   } catch (err) {
-    console.error('データファイルの読み込みに失敗しました。既定値で起動します。', err);
+    console.error('データファイルの読み込みに失敗しました。', err);
+    const restored = tryRestoreFromBackup('データファイル(server/data/db.json)の読み込みに失敗しました');
+    if (restored) return restored;
+    console.error('バックアップも見つからなかったため、既定値で起動します。');
     return defaultData();
   }
 }
@@ -105,6 +151,44 @@ let persistTimer = null;
 let persistDirty = false;
 let persistInFlight = null;
 
+// その日の状態を server/data/backups/db-YYYY-MM-DD.json として残しておく。
+// メインのdb.jsonが誤って削除・破損しても、ここから直近の状態を復元できるようにするための保険。
+// 保存のたびに毎回書き込むと大量データ時に負荷が大きいため、一定間隔(最短でも1時間)ごとに
+// その日のファイルを上書きする形にし、日付が変わったら新しいファイルとして残す。
+const BACKUP_MIN_INTERVAL_MS = 60 * 60 * 1000;
+let lastBackupWriteAt = 0;
+
+function todayDateStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function pruneOldBackups() {
+  try {
+    const files = (await readdir(BACKUP_DIR)).filter((f) => /^db-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort();
+    const excess = files.length - BACKUP_RETENTION_DAYS;
+    for (const f of files.slice(0, Math.max(0, excess))) {
+      await unlink(join(BACKUP_DIR, f)).catch(() => {});
+    }
+  } catch {
+    // バックアップフォルダがまだ無い場合などは何もしない
+  }
+}
+
+async function maybeWriteDailyBackup() {
+  const now = Date.now();
+  if (now - lastBackupWriteAt < BACKUP_MIN_INTERVAL_MS) return;
+  const backupFile = join(BACKUP_DIR, `db-${todayDateStr()}.json`);
+  try {
+    if (!existsSync(BACKUP_DIR)) await mkdir(BACKUP_DIR, { recursive: true });
+    await writeFile(backupFile, JSON.stringify(state), 'utf-8');
+    lastBackupWriteAt = now;
+    await pruneOldBackups();
+  } catch (err) {
+    console.error('バックアップの作成に失敗しました:', err);
+  }
+}
+
 async function flushToDisk() {
   if (!persistDirty) return;
   persistDirty = false;
@@ -113,6 +197,7 @@ async function flushToDisk() {
   const json = JSON.stringify(state);
   await writeFile(tmpFile, json, 'utf-8');
   await rename(tmpFile, DATA_FILE);
+  await maybeWriteDailyBackup();
 }
 
 function schedulePersist() {
@@ -151,11 +236,15 @@ async function flushAndExit() {
 process.on('SIGINT', flushAndExit);
 process.on('SIGTERM', flushAndExit);
 
-// 初回起動時にファイルを作成しておく(こちらは即座に存在させたいので同期書き込みのまま)
+// 初回起動時(または直近のバックアップから復元した直後)にファイルを作成しておく
+// (こちらは即座に存在させたいので同期書き込みのまま)
 if (!existsSync(DATA_FILE)) {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   writeFileSync(DATA_FILE, JSON.stringify(state), 'utf-8');
 }
+
+// その日まだ変更が無くても、起動時点の状態を一度バックアップしておく
+maybeWriteDailyBackup().catch(() => {});
 
 function makeCollection(name, sortByCode) {
   return {
