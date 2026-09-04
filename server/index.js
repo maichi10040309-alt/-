@@ -143,6 +143,12 @@ app.post('/api/documents/issue-number', (req, res) => {
   res.json({ number });
 });
 
+app.post('/api/documents/issue-numbers', (req, res) => {
+  const { type, issueDate, count } = req.body;
+  const numbers = store.issueDocumentNumbers(type, issueDate, Math.max(0, Number(count) || 0));
+  res.json({ numbers });
+});
+
 app.get('/api/backup', (req, res) => {
   res.json({ ...store.exportAll(), exportedAt: new Date().toISOString() });
 });

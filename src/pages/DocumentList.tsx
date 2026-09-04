@@ -44,6 +44,12 @@ export default function DocumentList() {
     return m;
   }, [customers]);
 
+  const customerCodeMap = useMemo(() => {
+    const m = new Map<string, string>();
+    customers?.forEach((c) => m.set(c.id, c.code));
+    return m;
+  }, [customers]);
+
   const rounding = company?.taxRounding ?? 'floor';
 
   const totalsCache = useMemo(() => {
@@ -70,12 +76,17 @@ export default function DocumentList() {
     return list;
   }, [documents, keyword, dateFrom, dateTo, customerMap]);
 
+  // 発行日の新しい順にまとめつつ、同じ発行日の中では得意先コード順に並べる
+  // (締め処理で同じ締め日の合計請求書を複数まとめて発行した場合など、得意先順で見やすくするため)
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       if (a.issueDate !== b.issueDate) return b.issueDate.localeCompare(a.issueDate);
+      const codeA = customerCodeMap.get(a.customerId) ?? '';
+      const codeB = customerCodeMap.get(b.customerId) ?? '';
+      if (codeA !== codeB) return codeA.localeCompare(codeB);
       return b.number.localeCompare(a.number);
     });
-  }, [filtered]);
+  }, [filtered, customerCodeMap]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -351,7 +362,10 @@ export default function DocumentList() {
                         <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggle(d.id)} />
                       </td>
                       <td>{d.number}</td>
-                      <td>{customerMap.get(d.customerId) ?? '(不明)'}</td>
+                      <td>
+                        {customerCodeMap.get(d.customerId) ? `${customerCodeMap.get(d.customerId)} ` : ''}
+                        {customerMap.get(d.customerId) ?? '(不明)'}
+                      </td>
                       <td>{d.title}</td>
                       <td className="amount-cell">{formatMoney(totals.grandTotal)}</td>
                       <td>

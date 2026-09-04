@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 
 import { writeFile, rename, mkdir, readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -150,6 +151,8 @@ const PERSIST_DEBOUNCE_MS = 200;
 let persistTimer = null;
 let persistDirty = false;
 let persistInFlight = null;
+// ディスクへの書き込み(flushToDisk)が実際に進行中かどうかのフラグ。
+let flushing = false;
 
 // その日の状態を server/data/backups/db-YYYY-MM-DD.json として残しておく。
 // メインのdb.jsonが誤って削除・破損しても、ここから直近の状態を復元できるようにするための保険。
@@ -193,7 +196,10 @@ async function flushToDisk() {
   if (!persistDirty) return;
   persistDirty = false;
   if (!existsSync(DATA_DIR)) await mkdir(DATA_DIR, { recursive: true });
-  const tmpFile = DATA_FILE + '.tmp';
+  // 万一この関数が同時に2つ実行されるようなことがあっても(通常はflushingフラグで防いでいる)、
+  // 一時ファイル名を毎回ユニークにしておくことで、書き込み先が衝突してファイルが
+  // 壊れることがないようにする。
+  const tmpFile = `${DATA_FILE}.${randomUUID()}.tmp`;
   const json = JSON.stringify(state);
   await writeFile(tmpFile, json, 'utf-8');
   await rename(tmpFile, DATA_FILE);
@@ -201,12 +207,21 @@ async function flushToDisk() {
 }
 
 function schedulePersist() {
-  if (persistTimer) return;
+  // タイマー待ちの間、または実際にディスクへ書き込んでいる(flushing)間に来た変更は、
+  // ここで新しいタイマーを別途立てずに待つ。
+  // 以前は「タイマーが発火した時点でpersistTimerをnullに戻す」実装だったため、
+  // 大きなファイルの書き込み(await writeFile/rename)がまだ完了していない間に
+  // 次の変更が来ると、それだけで別のタイマーが立ってしまい、同じ一時ファイル
+  // (db.json.tmp)に対して2つの書き込みが同時に走ることがあった。これが
+  // ファイルの一部が壊れる(不正な制御文字が混入する)不具合の原因だった。
+  if (persistTimer || flushing) return;
   persistTimer = setTimeout(() => {
     persistTimer = null;
+    flushing = true;
     persistInFlight = flushToDisk()
       .catch((err) => console.error('データの保存に失敗しました:', err))
       .finally(() => {
+        flushing = false;
         persistInFlight = null;
         // 書き込み中にさらに変更があった場合は続けて保存する
         if (persistDirty) schedulePersist();
@@ -341,14 +356,20 @@ const DOC_PREFIX = {
 };
 
 export function issueDocumentNumber(type, issueDate) {
+  return issueDocumentNumbers(type, issueDate, 1)[0];
+}
+
+// まとめて採番する(締め処理で得意先ごとに合計請求書を発行する際、1件ずつサーバーへ
+// 問い合わせると得意先数が多い場合に時間がかかるため、まとめて予約できるようにする)
+export function issueDocumentNumbers(type, issueDate, count) {
   const year = String(issueDate).slice(0, 4);
   const next = state.company.nextDocNumber ?? {};
-  const current = next[type] ?? 1;
-  next[type] = current + 1;
+  const start = next[type] ?? 1;
+  next[type] = start + count;
   state.company.nextDocNumber = next;
   persist();
   const prefix = DOC_PREFIX[type] ?? 'X';
-  return `${prefix}-${year}-${String(current).padStart(4, '0')}`;
+  return Array.from({ length: count }, (_, i) => `${prefix}-${year}-${String(start + i).padStart(4, '0')}`);
 }
 
 export function issueCustomerCode() {

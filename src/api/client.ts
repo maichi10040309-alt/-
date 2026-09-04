@@ -47,6 +47,10 @@ export const api = {
       http.get<SalesDocument[]>(`/api/documents?type=${encodeURIComponent(type)}`),
     issueNumber: (type: DocumentType, issueDate: string) =>
       http.post<{ number: string }>('/api/documents/issue-number', { type, issueDate }).then((r) => r.number),
+    issueNumbers: (type: DocumentType, issueDate: string, count: number) =>
+      http
+        .post<{ numbers: string[] }>('/api/documents/issue-numbers', { type, issueDate, count })
+        .then((r) => r.numbers),
   },
   company: {
     get: () => http.get<CompanyInfo>('/api/company'),

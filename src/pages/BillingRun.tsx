@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from '../api/useLiveQuery';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -8,7 +8,6 @@ import { newId } from '../utils/id';
 import { todayISO, addDays, formatDateJa, formatMoney } from '../utils/format';
 import { calcDocumentTotals } from '../utils/tax';
 import { calcReceivables } from '../utils/receivables';
-import { issueDocumentNumber } from '../utils/docNumber';
 import type { SalesDocument } from '../types';
 
 function firstDayOfMonth(iso: string) {
@@ -90,6 +89,20 @@ export default function BillingRun() {
     return m;
   }, [selectedDocs]);
 
+  const [issuing, setIssuing] = useState(false);
+
+  // 発行処理の途中でタブを閉じたりページを移動したりすると、その時点までしか
+  // 発行されず「何件かしか作成されていない」状態になってしまうため、処理中は警告を出す
+  useEffect(() => {
+    if (!issuing) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [issuing]);
+
   const handleIssue = async () => {
     if (selectedDocs.length === 0) {
       alert('対象の納品書を選択してください。');
@@ -97,59 +110,79 @@ export default function BillingRun() {
     }
     if (!confirm(`${byCustomer.size}件の得意先に対して合計請求書を発行します。よろしいですか?`)) return;
 
-    const now = new Date().toISOString();
-    // 請求書の発行日は締め処理を実行した日ではなく、対象期間の締め日(終了日)にする
-    const issueDate = periodTo;
-    const createdIds: string[] = [];
+    setIssuing(true);
+    try {
+      const now = new Date().toISOString();
+      // 請求書の発行日は締め処理を実行した日ではなく、対象期間の締め日(終了日)にする
+      const issueDate = periodTo;
+      const entries = Array.from(byCustomer.entries());
 
-    for (const [custId, docs] of byCustomer.entries()) {
-      const items = docs.flatMap((d) => d.items.map((it) => ({ ...it, id: newId() })));
-      const number = await issueDocumentNumber('consolidated_invoice', issueDate);
-      const balance = receivables.get(custId);
-      const customer = customers?.find((c) => c.id === custId);
-      const sourceSummaries = docs.map((d) => ({
-        date: d.issueDate,
-        number: d.number,
-        title: d.title,
-        subtotal: calcDocumentTotals(d.items, rounding).subtotal,
-      }));
+      // 伝票番号は1件ずつサーバーに問い合わせると得意先数が多い場合に非常に時間がかかるため、
+      // 必要な件数をまとめて予約する
+      const numbers = await api.documents.issueNumbers('consolidated_invoice', issueDate, entries.length);
 
-      const newDoc: SalesDocument = {
-        id: newId(),
-        type: 'consolidated_invoice',
-        number,
-        customerId: custId,
-        issueDate,
-        validUntilDate: '',
-        dueDate: addDays(issueDate, customer?.paymentDay ? 30 : 30),
-        title: `${formatDateJa(periodFrom)}〜${formatDateJa(periodTo)} ご利用分`,
-        items,
-        notes: '',
-        status: 'issued',
-        sourceDocumentIds: docs.map((d) => d.id),
-        convertedToDocumentId: null,
-        periodFrom,
-        periodTo,
-        previousBalance: balance?.balance ?? 0,
-        paymentsAmount: 0,
-        deliveryTag: '',
-        paid: false,
-        paidDate: '',
-        bankFee: 0,
-        sourceSummaries,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await api.documents.put(newDoc);
-      createdIds.push(newDoc.id);
+      const newInvoices: SalesDocument[] = [];
+      const closedDeliveries: SalesDocument[] = [];
 
-      for (const d of docs) {
-        await api.documents.patch(d.id, { status: 'closed', convertedToDocumentId: newDoc.id, updatedAt: now });
-      }
+      entries.forEach(([custId, docs], i) => {
+        const customer = customers?.find((c) => c.id === custId);
+        const items = docs.flatMap((d) => d.items.map((it) => ({ ...it, id: newId() })));
+        const balance = receivables.get(custId);
+        const sourceSummaries = docs.map((d) => ({
+          date: d.issueDate,
+          number: d.number,
+          title: d.title,
+          subtotal: calcDocumentTotals(d.items, rounding).subtotal,
+        }));
+
+        const newDoc: SalesDocument = {
+          id: newId(),
+          type: 'consolidated_invoice',
+          number: numbers[i],
+          customerId: custId,
+          issueDate,
+          validUntilDate: '',
+          dueDate: addDays(issueDate, customer?.paymentDay ? 30 : 30),
+          title: `${formatDateJa(periodFrom)}〜${formatDateJa(periodTo)} ご利用分`,
+          items,
+          notes: '',
+          status: 'issued',
+          sourceDocumentIds: docs.map((d) => d.id),
+          convertedToDocumentId: null,
+          periodFrom,
+          periodTo,
+          previousBalance: balance?.balance ?? 0,
+          paymentsAmount: 0,
+          deliveryTag: '',
+          paid: false,
+          paidDate: '',
+          bankFee: 0,
+          sourceSummaries,
+          createdAt: now,
+          updatedAt: now,
+        };
+        newInvoices.push(newDoc);
+        docs.forEach((d) => closedDeliveries.push({ ...d, status: 'closed', convertedToDocumentId: newDoc.id, updatedAt: now }));
+      });
+
+      // 得意先ごとに数回ずつリクエストを送っていた以前の方式は、得意先数が多い場合に
+      // 保存のたびサーバー側でデータ全体を書き出す処理が積み重なり、非常に時間がかかって
+      // いた(数十件の得意先で数分かかることもあった)。作成する請求書と、請求済みにする
+      // 納品書をすべてまとめて1回のリクエストで送ることで、保存処理を1回で済ませる。
+      await api.documents.bulkPut([...newInvoices, ...closedDeliveries]);
+
+      alert(`${newInvoices.length}件の合計請求書を発行しました。`);
+      navigate('/documents/consolidated_invoice');
+    } catch (err) {
+      console.error('合計請求書の発行に失敗しました:', err);
+      alert(
+        '合計請求書の発行に失敗しました。請求書は作成されていません。\n' +
+          `エラー内容: ${err instanceof Error ? err.message : String(err)}\n` +
+          'もう一度お試しください。',
+      );
+    } finally {
+      setIssuing(false);
     }
-
-    alert(`${createdIds.length}件の合計請求書を発行しました。`);
-    navigate('/documents/consolidated_invoice');
   };
 
   return (
@@ -178,11 +211,20 @@ export default function BillingRun() {
           <input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
         </label>
         <div className="form-actions-inline">
-          <button className="btn btn-primary" onClick={handleSearch}>
+          <button className="btn btn-primary" onClick={handleSearch} disabled={issuing}>
             対象の納品書を検索
           </button>
         </div>
       </div>
+
+      {issuing && (
+        <div className="card billing-progress">
+          合計請求書を発行しています...
+          <div className="billing-progress-note">
+            完了するまでこのタブを閉じたり、他の画面に移動したりしないでください。
+          </div>
+        </div>
+      )}
 
       {searched && (
         <div className="card">
@@ -203,7 +245,12 @@ export default function BillingRun() {
                 return (
                   <tr key={d.id}>
                     <td>
-                      <input type="checkbox" checked={selectedIds.has(d.id)} onChange={() => toggle(d.id)} />
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(d.id)}
+                        onChange={() => toggle(d.id)}
+                        disabled={issuing}
+                      />
                     </td>
                     <td>{d.number}</td>
                     <td>{formatDateJa(d.issueDate)}</td>
@@ -229,8 +276,8 @@ export default function BillingRun() {
           {byCustomer.size > 0 && (
             <div className="billing-summary">
               <div>選択中: {selectedDocs.length}件の納品書 / {byCustomer.size}件の得意先</div>
-              <button className="btn btn-primary" onClick={handleIssue}>
-                合計請求書を一括発行
+              <button className="btn btn-primary" onClick={handleIssue} disabled={issuing}>
+                {issuing ? '発行中...' : '合計請求書を一括発行'}
               </button>
             </div>
           )}

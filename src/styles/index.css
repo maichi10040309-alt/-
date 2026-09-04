@@ -709,6 +709,17 @@ textarea:focus {
   border-top: 1px solid var(--color-border);
 }
 
+.billing-progress {
+  font-weight: 600;
+}
+
+.billing-progress-note {
+  margin-top: 6px;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
 /* modal (CSV取り込みなど) */
 .modal-overlay {
   position: fixed;
