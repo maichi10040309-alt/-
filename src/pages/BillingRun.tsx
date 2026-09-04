@@ -30,18 +30,6 @@ export default function BillingRun() {
 
   const rounding = company?.taxRounding ?? 'floor';
 
-  const eligibleDeliveries = useMemo(() => {
-    if (!allDocuments) return [];
-    return allDocuments.filter(
-      (d) =>
-        d.type === 'delivery' &&
-        d.status === 'issued' &&
-        (!customerId || d.customerId === customerId) &&
-        d.issueDate >= periodFrom &&
-        d.issueDate <= periodTo,
-    );
-  }, [allDocuments, customerId, periodFrom, periodTo]);
-
   const receivables = useMemo(
     () => (allDocuments ? calcReceivables(allDocuments, rounding) : new Map()),
     [allDocuments, rounding],
@@ -52,6 +40,31 @@ export default function BillingRun() {
     customers?.forEach((c) => m.set(c.id, c.name));
     return m;
   }, [customers]);
+
+  const customerCodeMap = useMemo(() => {
+    const m = new Map<string, string>();
+    customers?.forEach((c) => m.set(c.id, c.code));
+    return m;
+  }, [customers]);
+
+  // 得意先コード順(未登録の得意先は末尾)に並べ、同じ得意先内は納品日順にする
+  const eligibleDeliveries = useMemo(() => {
+    if (!allDocuments) return [];
+    const filtered = allDocuments.filter(
+      (d) =>
+        d.type === 'delivery' &&
+        d.status === 'issued' &&
+        (!customerId || d.customerId === customerId) &&
+        d.issueDate >= periodFrom &&
+        d.issueDate <= periodTo,
+    );
+    return filtered.sort((a, b) => {
+      const codeA = customerCodeMap.get(a.customerId) ?? '';
+      const codeB = customerCodeMap.get(b.customerId) ?? '';
+      if (codeA !== codeB) return codeA.localeCompare(codeB);
+      return a.issueDate.localeCompare(b.issueDate);
+    });
+  }, [allDocuments, customerId, periodFrom, periodTo, customerCodeMap]);
 
   const handleSearch = () => {
     setSelectedIds(new Set(eligibleDeliveries.map((d) => d.id)));
@@ -85,7 +98,8 @@ export default function BillingRun() {
     if (!confirm(`${byCustomer.size}件の得意先に対して合計請求書を発行します。よろしいですか?`)) return;
 
     const now = new Date().toISOString();
-    const issueDate = todayISO();
+    // 請求書の発行日は締め処理を実行した日ではなく、対象期間の締め日(終了日)にする
+    const issueDate = periodTo;
     const createdIds: string[] = [];
 
     for (const [custId, docs] of byCustomer.entries()) {
@@ -193,7 +207,10 @@ export default function BillingRun() {
                     </td>
                     <td>{d.number}</td>
                     <td>{formatDateJa(d.issueDate)}</td>
-                    <td>{customerMap.get(d.customerId) ?? '(不明)'}</td>
+                    <td>
+                      {customerCodeMap.get(d.customerId) ? `${customerCodeMap.get(d.customerId)} ` : ''}
+                      {customerMap.get(d.customerId) ?? '(不明)'}
+                    </td>
                     <td>{d.title}</td>
                     <td className="amount-cell">{formatMoney(totals.grandTotal)}</td>
                   </tr>
