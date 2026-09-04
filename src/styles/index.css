@@ -395,6 +395,12 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.consolidated-summary-note {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
 .amount-cell.strong {
   font-weight: 700;
   color: var(--color-primary-dark);

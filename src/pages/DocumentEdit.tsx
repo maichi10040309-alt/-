@@ -7,10 +7,16 @@ import ItemsEditor from '../components/ItemsEditor';
 import TotalsBox from '../components/TotalsBox';
 import CustomerPicker from '../components/CustomerPicker';
 import { newId } from '../utils/id';
-import { todayISO, addDays } from '../utils/format';
+import { todayISO, addDays, formatDateShort, formatMoney } from '../utils/format';
 import { calcDocumentTotals } from '../utils/tax';
 import { issueDocumentNumber } from '../utils/docNumber';
 import { DOCUMENT_TYPE_LABEL, type DocumentType, type SalesDocument } from '../types';
+
+// 合計請求書は締め処理で大量の納品書(数百〜数千件の明細)を集計して作られるため、
+// 通常の明細編集テーブル(行ごとに入力欄・選択欄を持つ)でそのまま表示すると
+// DOM要素数が膨大になり画面が固まってしまう。合計請求書は明細を個別編集する
+// 意味も薄いため、読み取り専用の内訳一覧に切り替える。表示自体もこの件数までに留める。
+const CONSOLIDATED_SUMMARY_LIMIT = 300;
 
 const emptyDoc = (type: DocumentType): SalesDocument => {
   const now = new Date().toISOString();
@@ -247,7 +253,11 @@ export default function DocumentEdit() {
       </div>
 
       <div className="card">
-        <ItemsEditor items={doc.items} onChange={(items) => set('items', items)} products={products ?? []} customer={customer} />
+        {docType === 'consolidated_invoice' ? (
+          <ConsolidatedItemsSummary doc={doc} />
+        ) : (
+          <ItemsEditor items={doc.items} onChange={(items) => set('items', items)} products={products ?? []} customer={customer} />
+        )}
       </div>
 
       <div className="card two-col">
@@ -257,6 +267,54 @@ export default function DocumentEdit() {
         </label>
         <TotalsBox totals={totals} />
       </div>
+    </div>
+  );
+}
+
+function ConsolidatedItemsSummary({ doc }: { doc: SalesDocument }) {
+  const sources = doc.sourceSummaries ?? [];
+  const shown = sources.slice(0, CONSOLIDATED_SUMMARY_LIMIT);
+  const hiddenCount = sources.length - shown.length;
+
+  return (
+    <div className="consolidated-summary">
+      <p className="consolidated-summary-note">
+        合計請求書は元の納品書({sources.length > 0 ? sources.length : doc.items.length}件)を締め処理で集計したものです。
+        明細はここでは編集できません。内容を修正する場合は元の納品書を修正のうえ、締め処理をやり直してください。
+      </p>
+      {sources.length > 0 ? (
+        <>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>日付</th>
+                <th>伝票番号</th>
+                <th>件名</th>
+                <th className="amount-cell">金額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((s, i) => (
+                <tr key={`${s.number}-${i}`}>
+                  <td>{formatDateShort(s.date)}</td>
+                  <td>{s.number}</td>
+                  <td>{s.title}</td>
+                  <td className="amount-cell">{formatMoney(s.subtotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {hiddenCount > 0 && (
+            <p className="consolidated-summary-note">
+              他 {hiddenCount} 件(件数が多いため一部のみ表示しています。全件は印刷プレビューで確認できます)
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="consolidated-summary-note">
+          このデータには内訳(納品書ごとの明細)が保存されていません。合計金額のみ表示しています。
+        </p>
+      )}
     </div>
   );
 }
