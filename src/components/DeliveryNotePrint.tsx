@@ -1,4 +1,4 @@
-import type { CompanyInfo, Customer, DocumentItem, SalesDocument } from '../types';
+import type { CompanyInfo, Customer, DocumentItem, Product, SalesDocument } from '../types';
 import { calcDocumentTotals } from '../utils/tax';
 import { formatDateJa, formatMoney } from '../utils/format';
 
@@ -12,16 +12,19 @@ export default function DeliveryNotePrint({
   doc,
   customer,
   company,
+  products,
 }: {
   doc: SalesDocument;
   customer: Customer | undefined;
   company: CompanyInfo;
+  products?: Product[];
 }) {
   const totals = calcDocumentTotals(doc.items, company.taxRounding);
   const totalPages = Math.max(1, Math.ceil(doc.items.length / ROWS_PER_PAGE));
   const pages = Array.from({ length: totalPages }, (_, i) =>
     doc.items.slice(i * ROWS_PER_PAGE, (i + 1) * ROWS_PER_PAGE),
   );
+  const productCodeMap = new Map((products ?? []).map((p) => [p.id, p.code]));
 
   return (
     <>
@@ -36,6 +39,7 @@ export default function DeliveryNotePrint({
             pageItems={pageItems}
             pageNumber={i + 1}
             totalPages={totalPages}
+            productCodeMap={productCodeMap}
           />
           <DeliveryHalf
             variant="copy"
@@ -46,6 +50,7 @@ export default function DeliveryNotePrint({
             pageItems={pageItems}
             pageNumber={i + 1}
             totalPages={totalPages}
+            productCodeMap={productCodeMap}
           />
         </div>
       ))}
@@ -62,6 +67,7 @@ function DeliveryHalf({
   pageItems,
   pageNumber,
   totalPages,
+  productCodeMap,
 }: {
   variant: 'original' | 'copy';
   doc: SalesDocument;
@@ -71,6 +77,7 @@ function DeliveryHalf({
   pageItems: DocumentItem[];
   pageNumber: number;
   totalPages: number;
+  productCodeMap: Map<string, string>;
 }) {
   const title = variant === 'original' ? '納品書' : '納品書（控）';
   const blankRowCount = Math.max(0, ROWS_PER_PAGE - pageItems.length);
@@ -184,16 +191,19 @@ function DeliveryHalf({
             </tr>
           </thead>
           <tbody>
-            {pageItems.map((item) => (
-              <tr key={item.id}>
-                <td>{item.name}</td>
-                <td className="num">{item.quantity}</td>
-                <td>{item.unit}</td>
-                <td className="num">{formatMoney(item.unitPrice)}</td>
-                <td className="num">{formatMoney(item.quantity * item.unitPrice)}</td>
-                <td>{item.note}</td>
-              </tr>
-            ))}
+            {pageItems.map((item) => {
+              const code = item.productId ? productCodeMap.get(item.productId) : undefined;
+              return (
+                <tr key={item.id}>
+                  <td>{code ? `${code} ${item.name}` : item.name}</td>
+                  <td className="num">{item.quantity}</td>
+                  <td>{item.unit}</td>
+                  <td className="num">{formatMoney(item.unitPrice)}</td>
+                  <td className="num">{formatMoney(item.quantity * item.unitPrice)}</td>
+                  <td>{item.note}</td>
+                </tr>
+              );
+            })}
             {Array.from({ length: blankRowCount }).map((_, i) => (
               <tr key={`blank-${i}`}>
                 <td>&nbsp;</td>

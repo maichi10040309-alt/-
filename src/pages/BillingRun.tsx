@@ -128,10 +128,12 @@ export default function BillingRun() {
         const customer = customers?.find((c) => c.id === custId);
         const items = docs.flatMap((d) => d.items.map((it) => ({ ...it, id: newId() })));
         const balance = receivables.get(custId);
+        // 合計請求書の明細表(1行=1件の納品書)に表示する品名。納品書自体には件名が無いため、
+        // 明細の品名を「、」でつないだものを使う(印刷画面の「品番・品名」欄が空欄になるのを防ぐ)
         const sourceSummaries = docs.map((d) => ({
           date: d.issueDate,
           number: d.number,
-          title: d.title,
+          title: d.items.map((it) => it.name).filter(Boolean).join('、') || d.title,
           subtotal: calcDocumentTotals(d.items, rounding).subtotal,
         }));
 

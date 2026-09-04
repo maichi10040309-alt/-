@@ -18,6 +18,7 @@ export default function DocumentPrint() {
     () => (doc ? api.customers.get(doc.customerId) : Promise.resolve(undefined)),
     [doc],
   );
+  const products = useLiveQuery(() => api.products.list(), []);
 
   if (!doc || !company) return <div className="card">読み込み中...</div>;
 
@@ -36,7 +37,7 @@ export default function DocumentPrint() {
       </div>
 
       {docType === 'delivery' ? (
-        <DeliveryNotePrint doc={doc} customer={customer} company={company} />
+        <DeliveryNotePrint doc={doc} customer={customer} company={company} products={products ?? []} />
       ) : docType === 'consolidated_invoice' ? (
         <ConsolidatedInvoicePrint doc={doc} customer={customer} company={company} />
       ) : (

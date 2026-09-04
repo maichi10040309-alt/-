@@ -16,12 +16,13 @@ import {
   productKeyOf,
   analyzeMissingProductLinks,
   applyProductLinksToDocuments,
+  repairConsolidatedInvoiceSourceTitles,
   type LegacyParseResult,
   type CustomerResolution,
   type ProductResolution,
   type ProductLinkAnalysis,
 } from '../utils/legacyDocumentImport';
-import { DOCUMENT_TYPE_LABEL, type Customer, type DocumentType, type Product } from '../types';
+import { DOCUMENT_TYPE_LABEL, type Customer, type DocumentType, type Product, type SalesDocument } from '../types';
 
 const IMPORT_TARGETS: DocumentType[] = ['quotation', 'delivery', 'invoice', 'consolidated_invoice', 'receipt'];
 const CHUNK_SIZE = 2000;
@@ -454,6 +455,109 @@ function ProductLinkRepairCard() {
   );
 }
 
+type TitleRepairState =
+  | { phase: 'idle' }
+  | { phase: 'analyzing' }
+  | { phase: 'preview'; changed: SalesDocument[] }
+  | { phase: 'importing'; progress: string }
+  | { phase: 'done'; count: number }
+  | { phase: 'error'; message: string };
+
+// 締め処理で発行した合計請求書の印刷画面で「品番・品名」欄が空欄になる不具合(元の納品書に
+// 件名が無いため)を、この修正より前に発行済みの合計請求書について後から埋め直す画面。
+function ConsolidatedTitleRepairCard() {
+  const [state, setState] = useState<TitleRepairState>({ phase: 'idle' });
+
+  const handleAnalyze = async () => {
+    setState({ phase: 'analyzing' });
+    try {
+      const documents = await api.documents.list();
+      const changed = repairConsolidatedInvoiceSourceTitles(documents, new Date().toISOString());
+      if (changed.length === 0) {
+        setState({ phase: 'done', count: 0 });
+        return;
+      }
+      setState({ phase: 'preview', changed });
+    } catch (err) {
+      setState({ phase: 'error', message: `分析に失敗しました: ${(err as Error).message}` });
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (state.phase !== 'preview') return;
+    const { changed } = state;
+    setState({ phase: 'importing', progress: '更新中...' });
+    try {
+      const batches = chunk(changed, CHUNK_SIZE);
+      for (let i = 0; i < batches.length; i++) {
+        setState({
+          phase: 'importing',
+          progress: `更新中... (${Math.min((i + 1) * CHUNK_SIZE, changed.length)}/${changed.length}件)`,
+        });
+        await api.documents.bulkPut(batches[i]);
+      }
+      setState({ phase: 'done', count: changed.length });
+    } catch (err) {
+      setState({ phase: 'error', message: `修正に失敗しました: ${(err as Error).message}` });
+    }
+  };
+
+  return (
+    <div className="card legacy-import-card">
+      <h3 className="section-title">合計請求書の品名修正</h3>
+      <p className="hint">
+        締め処理で発行した合計請求書は、印刷画面の明細表(品番・品名の欄)が空欄になっていることがありました。元になった納品書がまだ残っていれば、そこから品名を補って埋め直します。
+      </p>
+
+      {state.phase === 'idle' && (
+        <button className="btn btn-secondary" onClick={handleAnalyze}>
+          対象を確認する
+        </button>
+      )}
+
+      {state.phase === 'analyzing' && <p className="hint">分析中...</p>}
+
+      {state.phase === 'preview' && (
+        <div>
+          <p>{state.changed.length}件の合計請求書を修正できます。</p>
+          <div className="modal-actions">
+            <button className="btn btn-secondary" onClick={() => setState({ phase: 'idle' })}>
+              キャンセル
+            </button>
+            <button className="btn btn-primary" onClick={handleConfirm}>
+              この内容で修正する
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state.phase === 'importing' && <p className="hint">{state.progress}</p>}
+
+      {state.phase === 'done' && (
+        <div>
+          <p>
+            {state.count > 0
+              ? `${state.count}件の合計請求書を修正しました。`
+              : '修正が必要な合計請求書は見つかりませんでした。'}
+          </p>
+          <button className="btn btn-secondary" onClick={() => setState({ phase: 'idle' })}>
+            閉じる
+          </button>
+        </div>
+      )}
+
+      {state.phase === 'error' && (
+        <div>
+          <p className="hint legacy-import-error">{state.message}</p>
+          <button className="btn btn-secondary" onClick={() => setState({ phase: 'idle' })}>
+            やり直す
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LegacyImport() {
   return (
     <div>
@@ -485,6 +589,7 @@ export default function LegacyImport() {
       </div>
 
       <ProductLinkRepairCard />
+      <ConsolidatedTitleRepairCard />
     </div>
   );
 }

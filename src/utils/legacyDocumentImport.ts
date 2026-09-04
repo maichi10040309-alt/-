@@ -517,6 +517,31 @@ export function applyProductLinksToDocuments(
   return changed;
 }
 
+// 締め処理で発行した合計請求書は、明細表(印刷画面)の「品番・品名」欄に、元になった
+// 納品書の品名を表示する。この対応前に発行された合計請求書はこの欄が空欄のままなので、
+// 元の納品書(sourceDocumentIds)がまだ残っていれば、そこから品名を補って埋め直す。
+export function repairConsolidatedInvoiceSourceTitles(documents: SalesDocument[], now: string): SalesDocument[] {
+  const byId = new Map(documents.map((d) => [d.id, d]));
+  const changed: SalesDocument[] = [];
+  for (const doc of documents) {
+    if (doc.type !== 'consolidated_invoice') continue;
+    if (doc.sourceSummaries.length === 0) continue;
+    if (doc.sourceDocumentIds.length !== doc.sourceSummaries.length) continue;
+    let docChanged = false;
+    const newSummaries = doc.sourceSummaries.map((s, i) => {
+      if (s.title.trim()) return s;
+      const source = byId.get(doc.sourceDocumentIds[i]);
+      if (!source) return s;
+      const title = source.items.map((it) => it.name).filter(Boolean).join('、');
+      if (!title) return s;
+      docChanged = true;
+      return { ...s, title };
+    });
+    if (docChanged) changed.push({ ...doc, sourceSummaries: newSummaries, updatedAt: now });
+  }
+  return changed;
+}
+
 export function buildSalesDocument(
   row: LegacyImportRow,
   docType: DocumentType,
