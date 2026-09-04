@@ -1,6 +1,6 @@
 import { parseCSV } from './csv';
 import { newId } from './id';
-import type { Customer, DocumentItem, DocumentType, SalesDocument, TaxRate } from '../types';
+import type { Customer, DocumentItem, DocumentType, Product, SalesDocument, TaxRate } from '../types';
 
 // 「販売らくだ」等、旧販売管理ソフトから書き出したCSV(見積書・納品書・請求書・領収証)を
 // このアプリのデータへ変換するための取り込みロジック。
@@ -23,6 +23,9 @@ export interface LegacyImportRow {
   title: string;
   notes: string;
   items: DocumentItem[];
+  // items と同じ順序で、CSV上の商品コード・商品名を保持しておく(商品台帳とのひも付け解決用)。
+  // 領収証の明細(お預かり金)は商品ではないため空配列のまま。
+  itemProductRefs: { code: string; name: string }[];
 }
 
 export interface LegacyParseResult {
@@ -130,6 +133,7 @@ function parseItemLineCsv(csvText: string): LegacyParseResult {
   for (const [slip, groupRows] of groups) {
     const first = groupRows[0];
     const items: DocumentItem[] = [];
+    const itemProductRefs: { code: string; name: string }[] = [];
     for (const r of groupRows) {
       const productName = val(r, idx.productName);
       if (!productName) continue;
@@ -155,6 +159,7 @@ function parseItemLineCsv(csvText: string): LegacyParseResult {
         taxRate: rate,
         note: val(r, idx.itemNote),
       });
+      itemProductRefs.push({ code: val(r, idx.productCode), name: productName });
     }
     if (items.length === 0) continue;
 
@@ -176,6 +181,7 @@ function parseItemLineCsv(csvText: string): LegacyParseResult {
       title: idx.title >= 0 ? val(first, idx.title) : '',
       notes: val(first, idx.notes),
       items,
+      itemProductRefs,
     });
   }
 
@@ -259,6 +265,8 @@ function parseReceiptCsv(csvText: string): LegacyParseResult {
           taxRate: 0,
         },
       ],
+      // 領収証の「お預かり金」は支払方法の内訳であって商品ではないため、ひも付け対象にしない
+      itemProductRefs: [],
     });
   }
 
@@ -340,6 +348,173 @@ export function resolveCustomers(rows: LegacyImportRow[], existingCustomers: Cus
   }
 
   return { matchedByKey, newCustomers };
+}
+
+export interface NewProductDraft {
+  key: string;
+  code: string; // 空ならインポート時に新規採番する
+  name: string;
+  unit: string;
+  taxRate: TaxRate;
+  unitPrice: number; // 商品台帳への初期登録価格(標準単価)。取り込んだ明細の単価を仮の値として使う
+}
+
+export interface ProductResolution {
+  // 解決キー(商品コード優先、無ければ商品名)→ 既存の商品ID
+  matchedByKey: Map<string, string>;
+  // 新規に作成が必要な商品(取り込み対象の全明細から重複排除済み)
+  newProducts: NewProductDraft[];
+}
+
+function productKeyOf(ref: { code: string; name: string }): string {
+  return ref.code ? `code:${ref.code}` : `name:${ref.name}`;
+}
+
+export { productKeyOf };
+
+// 明細行を商品台帳とひも付ける(得意先と同様、商品コードが一致すればそれを優先し、
+// 無ければ商品名の一致で判断する)。一致する商品が無い場合は新規作成の対象とする。
+// これを行わないと、取り込んだ明細は「(自由入力)」のまま商品未選択の状態になってしまう。
+export function resolveProducts(rows: LegacyImportRow[], existingProducts: Product[]): ProductResolution {
+  const byCode = new Map<string, Product>();
+  const byName = new Map<string, Product>();
+  for (const p of existingProducts) {
+    if (p.code) byCode.set(p.code.trim(), p);
+    if (p.name) byName.set(p.name.trim(), p);
+  }
+
+  const matchedByKey = new Map<string, string>();
+  const newProducts: NewProductDraft[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const row of rows) {
+    row.items.forEach((item, i) => {
+      const ref = row.itemProductRefs[i];
+      if (!ref || !ref.name) return;
+      const key = productKeyOf(ref);
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+
+      const existing = (ref.code && byCode.get(ref.code)) || byName.get(ref.name.trim()) || null;
+      if (existing) {
+        matchedByKey.set(key, existing.id);
+      } else {
+        newProducts.push({
+          key,
+          code: ref.code,
+          name: ref.name,
+          unit: item.unit,
+          taxRate: item.taxRate,
+          unitPrice: item.unitPrice,
+        });
+      }
+    });
+  }
+
+  return { matchedByKey, newProducts };
+}
+
+// resolveProductsの結果をもとに、各明細のproductIdを実際に埋める(その場でitemを書き換える)
+export function applyResolvedProductIds(
+  rows: LegacyImportRow[],
+  keyToProductId: Map<string, string>,
+): void {
+  for (const row of rows) {
+    row.items.forEach((item, i) => {
+      const ref = row.itemProductRefs[i];
+      if (!ref || !ref.name) return;
+      const productId = keyToProductId.get(productKeyOf(ref));
+      if (productId) item.productId = productId;
+    });
+  }
+}
+
+// --- 既に取り込み済みの伝票を、あとから商品台帳とひも付け直すための機能 ---
+// (この機能を追加する前に取り込んだ伝票は、明細に商品コードの控えが残っていないため、
+//  商品名の一致のみで判断する)
+
+export interface ProductLinkGap {
+  key: string;
+  name: string;
+  unit: string;
+  taxRate: TaxRate;
+  unitPrice: number;
+}
+
+export interface ProductLinkAnalysis {
+  affectedDocumentCount: number;
+  affectedItemCount: number;
+  matchedByKey: Map<string, string>; // 商品名キー → 既存の商品ID
+  newProducts: ProductLinkGap[];
+}
+
+function productNameKey(name: string): string {
+  return `name:${name.trim()}`;
+}
+
+export function analyzeMissingProductLinks(
+  documents: SalesDocument[],
+  existingProducts: Product[],
+): ProductLinkAnalysis {
+  const byName = new Map<string, Product>();
+  for (const p of existingProducts) {
+    if (p.name) byName.set(p.name.trim(), p);
+  }
+
+  const matchedByKey = new Map<string, string>();
+  const newProductsMap = new Map<string, ProductLinkGap>();
+  let affectedDocumentCount = 0;
+  let affectedItemCount = 0;
+
+  for (const doc of documents) {
+    // 領収証の明細(お預かり金)は支払方法の内訳であって商品ではないため対象外
+    if (doc.type === 'receipt') continue;
+    let docAffected = false;
+    for (const item of doc.items) {
+      if (item.productId || !item.name.trim()) continue;
+      docAffected = true;
+      affectedItemCount++;
+      const key = productNameKey(item.name);
+      if (matchedByKey.has(key) || newProductsMap.has(key)) continue;
+      const existing = byName.get(item.name.trim());
+      if (existing) {
+        matchedByKey.set(key, existing.id);
+      } else {
+        newProductsMap.set(key, { key, name: item.name, unit: item.unit, taxRate: item.taxRate, unitPrice: item.unitPrice });
+      }
+    }
+    if (docAffected) affectedDocumentCount++;
+  }
+
+  return {
+    affectedDocumentCount,
+    affectedItemCount,
+    matchedByKey,
+    newProducts: Array.from(newProductsMap.values()),
+  };
+}
+
+// 商品名の一致結果をもとに、対象の伝票のうち実際に更新が必要なものだけを
+// (明細のproductIdを埋めた新しいオブジェクトとして)返す
+export function applyProductLinksToDocuments(
+  documents: SalesDocument[],
+  keyToProductId: Map<string, string>,
+  now: string,
+): SalesDocument[] {
+  const changed: SalesDocument[] = [];
+  for (const doc of documents) {
+    if (doc.type === 'receipt') continue;
+    let docChanged = false;
+    const newItems = doc.items.map((item) => {
+      if (item.productId || !item.name.trim()) return item;
+      const productId = keyToProductId.get(productNameKey(item.name));
+      if (!productId) return item;
+      docChanged = true;
+      return { ...item, productId };
+    });
+    if (docChanged) changed.push({ ...doc, items: newItems, updatedAt: now });
+  }
+  return changed;
 }
 
 export function buildSalesDocument(

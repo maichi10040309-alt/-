@@ -9,12 +9,19 @@ import {
   parseLegacyCsv,
   readLegacyCsvFile,
   resolveCustomers,
+  resolveProducts,
+  applyResolvedProductIds,
   buildSalesDocument,
   customerKeyOf,
+  productKeyOf,
+  analyzeMissingProductLinks,
+  applyProductLinksToDocuments,
   type LegacyParseResult,
   type CustomerResolution,
+  type ProductResolution,
+  type ProductLinkAnalysis,
 } from '../utils/legacyDocumentImport';
-import { DOCUMENT_TYPE_LABEL, type Customer, type DocumentType } from '../types';
+import { DOCUMENT_TYPE_LABEL, type Customer, type DocumentType, type Product } from '../types';
 
 const IMPORT_TARGETS: DocumentType[] = ['quotation', 'delivery', 'invoice', 'consolidated_invoice', 'receipt'];
 const CHUNK_SIZE = 2000;
@@ -28,9 +35,15 @@ function chunk<T>(arr: T[], size: number): T[][] {
 type CardState =
   | { phase: 'idle' }
   | { phase: 'parsing' }
-  | { phase: 'preview'; fileName: string; parsed: LegacyParseResult; resolution: CustomerResolution }
+  | {
+      phase: 'preview';
+      fileName: string;
+      parsed: LegacyParseResult;
+      resolution: CustomerResolution;
+      productResolution: ProductResolution;
+    }
   | { phase: 'importing'; progress: string }
-  | { phase: 'done'; docCount: number; newCustomerCount: number; skippedCount: number }
+  | { phase: 'done'; docCount: number; newCustomerCount: number; newProductCount: number; skippedCount: number }
   | { phase: 'error'; message: string };
 
 function LegacyImportCard({ docType }: { docType: DocumentType }) {
@@ -46,9 +59,10 @@ function LegacyImportCard({ docType }: { docType: DocumentType }) {
         setState({ phase: 'error', message: '取り込める伝票が見つかりませんでした。CSVの形式をご確認ください。' });
         return;
       }
-      const existingCustomers = await api.customers.list();
+      const [existingCustomers, existingProducts] = await Promise.all([api.customers.list(), api.products.list()]);
       const resolution = resolveCustomers(parsed.rows, existingCustomers);
-      setState({ phase: 'preview', fileName: file.name, parsed, resolution });
+      const productResolution = resolveProducts(parsed.rows, existingProducts);
+      setState({ phase: 'preview', fileName: file.name, parsed, resolution, productResolution });
     } catch (err) {
       setState({ phase: 'error', message: `CSVの読み込みに失敗しました: ${(err as Error).message}` });
     }
@@ -56,7 +70,7 @@ function LegacyImportCard({ docType }: { docType: DocumentType }) {
 
   const handleConfirm = async () => {
     if (state.phase !== 'preview') return;
-    const { parsed, resolution } = state;
+    const { parsed, resolution, productResolution } = state;
     setState({ phase: 'importing', progress: '新規得意先を登録中...' });
     try {
       const now = new Date().toISOString();
@@ -99,6 +113,41 @@ function LegacyImportCard({ docType }: { docType: DocumentType }) {
         keyToCustomerId.set(resolution.newCustomers[i].key, rec.id);
       });
 
+      // 明細を商品台帳とひも付ける(得意先と同じ流れ:一致する商品が無ければ新規作成)。
+      // これを行わないと、取り込んだ明細の「商品」欄が常に「(自由入力)」のままになってしまう。
+      setState({ phase: 'importing', progress: '新規商品を登録中...' });
+      const needProductCodeCount = productResolution.newProducts.filter((p) => !p.code).length;
+      const issuedProductCodes =
+        needProductCodeCount > 0 ? await api.products.nextCodeBatch(needProductCodeCount) : [];
+      let productCodeCursor = 0;
+      const newProductRecords: Product[] = productResolution.newProducts.map((draft) => ({
+        id: newId(),
+        code: draft.code || issuedProductCodes[productCodeCursor++],
+        name: draft.name,
+        category: '',
+        unit: draft.unit,
+        taxRate: draft.taxRate,
+        prices: { price1: draft.unitPrice, price2: 0, price3: 0, cost: 0 },
+        notes: '',
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      const productBatches = chunk(newProductRecords, CHUNK_SIZE);
+      for (let i = 0; i < productBatches.length; i++) {
+        setState({
+          phase: 'importing',
+          progress: `新規商品を登録中... (${Math.min((i + 1) * CHUNK_SIZE, newProductRecords.length)}/${newProductRecords.length}件)`,
+        });
+        await api.products.bulkPut(productBatches[i]);
+      }
+
+      const keyToProductId = new Map(productResolution.matchedByKey);
+      newProductRecords.forEach((rec, i) => {
+        keyToProductId.set(productKeyOf(productResolution.newProducts[i]), rec.id);
+      });
+      applyResolvedProductIds(parsed.rows, keyToProductId);
+
       const documents = parsed.rows.map((row) =>
         buildSalesDocument(row, docType, keyToCustomerId.get(customerKeyOf(row))!, now),
       );
@@ -116,6 +165,7 @@ function LegacyImportCard({ docType }: { docType: DocumentType }) {
         phase: 'done',
         docCount: documents.length,
         newCustomerCount: newCustomerRecords.length,
+        newProductCount: newProductRecords.length,
         skippedCount: parsed.skippedRowCount,
       });
     } catch (err) {
@@ -155,6 +205,10 @@ function LegacyImportCard({ docType }: { docType: DocumentType }) {
           <p>
             得意先: 既存の得意先と一致 {state.resolution.matchedByKey.size}件 / 新しく作成 {state.resolution.newCustomers.length}
             件
+          </p>
+          <p>
+            商品: 既存の商品と一致 {state.productResolution.matchedByKey.size}件 / 新しく作成{' '}
+            {state.productResolution.newProducts.length}件
           </p>
           <div className="csv-preview-scroll">
             <table className="data-table compact">
@@ -202,7 +256,8 @@ function LegacyImportCard({ docType }: { docType: DocumentType }) {
       {state.phase === 'done' && (
         <div>
           <p>
-            {state.docCount}件の{label}を取り込みました(新規得意先{state.newCustomerCount}件を作成)。
+            {state.docCount}件の{label}を取り込みました(新規得意先{state.newCustomerCount}件・新規商品{state.newProductCount}
+            件を作成)。
           </p>
           <div className="modal-actions">
             <Link className="btn btn-secondary" to={`/documents/${docType}`}>
@@ -212,6 +267,178 @@ function LegacyImportCard({ docType }: { docType: DocumentType }) {
               別のファイルを取り込む
             </button>
           </div>
+        </div>
+      )}
+
+      {state.phase === 'error' && (
+        <div>
+          <p className="hint legacy-import-error">{state.message}</p>
+          <button className="btn btn-secondary" onClick={() => setState({ phase: 'idle' })}>
+            やり直す
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type RepairState =
+  | { phase: 'idle' }
+  | { phase: 'analyzing' }
+  | { phase: 'preview'; analysis: ProductLinkAnalysis }
+  | { phase: 'importing'; progress: string }
+  | { phase: 'done'; documentCount: number; newProductCount: number }
+  | { phase: 'error'; message: string };
+
+// この機能を追加する前に取り込んだ伝票は、明細の商品コードの控えが残っていないため、
+// 商品名の一致だけを頼りに、あとから商品台帳とひも付け直せるようにする画面。
+function ProductLinkRepairCard() {
+  const [state, setState] = useState<RepairState>({ phase: 'idle' });
+
+  const handleAnalyze = async () => {
+    setState({ phase: 'analyzing' });
+    try {
+      const [documents, products] = await Promise.all([api.documents.list(), api.products.list()]);
+      const analysis = analyzeMissingProductLinks(documents, products);
+      if (analysis.affectedItemCount === 0) {
+        setState({ phase: 'done', documentCount: 0, newProductCount: 0 });
+        return;
+      }
+      setState({ phase: 'preview', analysis });
+    } catch (err) {
+      setState({ phase: 'error', message: `分析に失敗しました: ${(err as Error).message}` });
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (state.phase !== 'preview') return;
+    const { analysis } = state;
+    setState({ phase: 'importing', progress: '新規商品を登録中...' });
+    try {
+      const now = new Date().toISOString();
+      const issuedCodes =
+        analysis.newProducts.length > 0 ? await api.products.nextCodeBatch(analysis.newProducts.length) : [];
+      const newProductRecords: Product[] = analysis.newProducts.map((draft, i) => ({
+        id: newId(),
+        code: issuedCodes[i],
+        name: draft.name,
+        category: '',
+        unit: draft.unit,
+        taxRate: draft.taxRate,
+        prices: { price1: draft.unitPrice, price2: 0, price3: 0, cost: 0 },
+        notes: '',
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      const productBatches = chunk(newProductRecords, CHUNK_SIZE);
+      for (let i = 0; i < productBatches.length; i++) {
+        setState({
+          phase: 'importing',
+          progress: `新規商品を登録中... (${Math.min((i + 1) * CHUNK_SIZE, newProductRecords.length)}/${newProductRecords.length}件)`,
+        });
+        await api.products.bulkPut(productBatches[i]);
+      }
+
+      const keyToProductId = new Map(analysis.matchedByKey);
+      newProductRecords.forEach((rec, i) => {
+        keyToProductId.set(analysis.newProducts[i].key, rec.id);
+      });
+
+      setState({ phase: 'importing', progress: '対象の伝票を確認中...' });
+      const documents = await api.documents.list();
+      const changed = applyProductLinksToDocuments(documents, keyToProductId, now);
+
+      const docBatches = chunk(changed, CHUNK_SIZE);
+      for (let i = 0; i < docBatches.length; i++) {
+        setState({
+          phase: 'importing',
+          progress: `伝票を更新中... (${Math.min((i + 1) * CHUNK_SIZE, changed.length)}/${changed.length}件)`,
+        });
+        await api.documents.bulkPut(docBatches[i]);
+      }
+
+      setState({ phase: 'done', documentCount: changed.length, newProductCount: newProductRecords.length });
+    } catch (err) {
+      setState({ phase: 'error', message: `修正に失敗しました: ${(err as Error).message}` });
+    }
+  };
+
+  return (
+    <div className="card legacy-import-card">
+      <h3 className="section-title">既存データの商品ひも付け修正</h3>
+      <p className="hint">
+        この機能を追加する前に取り込んだ伝票は、明細の「商品」欄が「(自由入力)」のままになっています。商品名が一致する既存の商品があれば自動でひも付け、無ければ商品台帳に新しく登録します(品名・単価などの明細の内容自体は変更しません)。
+      </p>
+
+      {state.phase === 'idle' && (
+        <button className="btn btn-secondary" onClick={handleAnalyze}>
+          対象を確認する
+        </button>
+      )}
+
+      {state.phase === 'analyzing' && <p className="hint">分析中...(件数が多い場合、少し時間がかかります)</p>}
+
+      {state.phase === 'preview' && (
+        <div>
+          <p>
+            商品未設定の明細: {state.analysis.affectedItemCount.toLocaleString('ja-JP')}件(
+            {state.analysis.affectedDocumentCount.toLocaleString('ja-JP')}件の伝票)
+          </p>
+          <p>
+            商品: 既存の商品と一致 {state.analysis.matchedByKey.size}件 / 新しく作成{' '}
+            {state.analysis.newProducts.length}件
+          </p>
+          {state.analysis.newProducts.length > 0 && (
+            <div className="csv-preview-scroll">
+              <table className="data-table compact">
+                <thead>
+                  <tr>
+                    <th>商品名</th>
+                    <th>単位</th>
+                    <th>税率</th>
+                    <th>単価(仮)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.analysis.newProducts.slice(0, 8).map((p) => (
+                    <tr key={p.key}>
+                      <td>{p.name}</td>
+                      <td>{p.unit}</td>
+                      <td>{p.taxRate}%</td>
+                      <td className="amount-cell">{formatMoney(p.unitPrice)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="hint">
+                先頭8件のプレビューです(全{state.analysis.newProducts.length}件)。単価・税率は明細の内容をそのまま仮登録するので、後から商品台帳で確認・調整してください。
+              </p>
+            </div>
+          )}
+          <div className="modal-actions">
+            <button className="btn btn-secondary" onClick={() => setState({ phase: 'idle' })}>
+              キャンセル
+            </button>
+            <button className="btn btn-primary" onClick={handleConfirm}>
+              この内容で修正する
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state.phase === 'importing' && <p className="hint">{state.progress}</p>}
+
+      {state.phase === 'done' && (
+        <div>
+          <p>
+            {state.documentCount > 0
+              ? `${state.documentCount}件の伝票を修正しました(新規商品${state.newProductCount}件を作成)。`
+              : '商品未設定の明細は見つかりませんでした。'}
+          </p>
+          <button className="btn btn-secondary" onClick={() => setState({ phase: 'idle' })}>
+            閉じる
+          </button>
         </div>
       )}
 
@@ -237,6 +464,7 @@ export default function LegacyImport() {
       <div className="card">
         <p className="hint">
           「伝票番号・得意先情報・明細」を持つCSV(1明細=1行の形式)に対応しています。同じ得意先コードまたは同じ名前の得意先が既に登録されていれば自動でひも付け、なければ新しく得意先を作成します。
+          商品も同様に、商品コードまたは商品名が一致する既存の商品があれば自動でひも付け、無ければ商品台帳に新しく登録します(価格・税率は明細の内容を仮の値として登録するので、後から商品台帳で確認・調整してください)。
           件数が多いファイル(数万件)の取り込みには数十秒〜数分かかる場合があります。念のため、取り込み前に「設定」画面からバックアップを保存しておくことをおすすめします。
         </p>
         <p className="hint">
@@ -255,6 +483,8 @@ export default function LegacyImport() {
           <LegacyImportCard key={docType} docType={docType} />
         ))}
       </div>
+
+      <ProductLinkRepairCard />
     </div>
   );
 }
