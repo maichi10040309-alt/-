@@ -14,6 +14,7 @@ function defaultData(): AppData {
   return {
     version: 1,
     departments: [{ id: now, name: '本部', sortOrder: 0 }],
+    sections: [],
     accountCategories: [
       { id: uuid(), name: '仕入', taxRate: 10, sortOrder: 0 },
       { id: uuid(), name: '仕入(軽減税率)', taxRate: 8, sortOrder: 1 },
@@ -46,7 +47,12 @@ export function loadData(): AppData {
     if (!raw) return defaultData();
     const parsed = JSON.parse(raw) as AppData;
     if (parsed.version !== 1) return defaultData();
-    return parsed;
+    // 旧バージョン(課の概念がなかったデータ)からの読み込みに備えて不足フィールドを補う
+    return {
+      ...parsed,
+      sections: parsed.sections ?? [],
+      invoices: parsed.invoices.map((inv) => ({ ...inv, sectionId: inv.sectionId ?? null })),
+    };
   } catch {
     return defaultData();
   }

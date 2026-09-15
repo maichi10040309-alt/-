@@ -16,6 +16,11 @@ export function InvoiceEntry({ data, updateData }: Props) {
 
   const departments = [...data.departments].sort((a, b) => a.sortOrder - b.sortOrder);
   const accountCategories = [...data.accountCategories].sort((a, b) => a.sortOrder - b.sortOrder);
+  const hasAnySections = data.sections.length > 0;
+
+  function sectionsForDepartment(departmentId: string) {
+    return data.sections.filter((s) => s.departmentId === departmentId).sort((a, b) => a.sortOrder - b.sortOrder);
+  }
 
   const rows = useMemo(() => {
     return data.invoices
@@ -47,10 +52,12 @@ export function InvoiceEntry({ data, updateData }: Props) {
       alert('先に「マスタ管理」タブで部署を登録してください。');
       return;
     }
+    const defaultSection = sectionsForDepartment(departmentId)[0];
     const newInvoice: Invoice = {
       id: uuid(),
       yearMonth,
       departmentId,
+      sectionId: defaultSection ? defaultSection.id : null,
       vendorId: vendorsForTab[0].id,
       accountCategoryId: accountCategories[0].id,
       billedAmount: 0,
@@ -105,6 +112,7 @@ export function InvoiceEntry({ data, updateData }: Props) {
           <thead>
             <tr>
               {deptTab === ALL_DEPARTMENTS && <th>部署</th>}
+              {hasAnySections && <th>課</th>}
               <th>業者名</th>
               <th>勘定科目</th>
               <th>請求額</th>
@@ -118,15 +126,36 @@ export function InvoiceEntry({ data, updateData }: Props) {
           <tbody>
             {rows.map((inv) => {
               const vendor = data.vendors.find((v) => v.id === inv.vendorId);
+              const rowSections = sectionsForDepartment(inv.departmentId);
               return (
                 <tr key={inv.id}>
                   {deptTab === ALL_DEPARTMENTS && (
                     <td>
-                      <select value={inv.departmentId} onChange={(e) => update(inv.id, { departmentId: e.target.value })}>
+                      <select
+                        value={inv.departmentId}
+                        onChange={(e) => {
+                          const nextDept = e.target.value;
+                          const nextSection = sectionsForDepartment(nextDept)[0];
+                          update(inv.id, { departmentId: nextDept, sectionId: nextSection ? nextSection.id : null });
+                        }}
+                      >
                         {departments.map((d) => (
                           <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                       </select>
+                    </td>
+                  )}
+                  {hasAnySections && (
+                    <td>
+                      {rowSections.length > 0 ? (
+                        <select value={inv.sectionId ?? ''} onChange={(e) => update(inv.id, { sectionId: e.target.value || null })}>
+                          {rowSections.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        '-'
+                      )}
                     </td>
                   )}
                   <td>
@@ -190,7 +219,7 @@ export function InvoiceEntry({ data, updateData }: Props) {
           {rows.length > 0 && (
             <tfoot>
               <tr>
-                <td colSpan={deptTab === ALL_DEPARTMENTS ? 3 : 2}>合計</td>
+                <td colSpan={(deptTab === ALL_DEPARTMENTS ? 1 : 0) + (hasAnySections ? 1 : 0) + 2}>合計</td>
                 <td className="col-amount">{formatYen(totalBilled)}</td>
                 <td></td>
                 <td className="col-amount">{formatYen(totalPaid)}</td>

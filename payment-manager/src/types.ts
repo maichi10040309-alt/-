@@ -6,6 +6,14 @@ export interface Department {
   sortOrder: number;
 }
 
+/** 部署内の課・施設など、より細かい単位。同じ部署の請求を課ごとに分けて入力するために使う。 */
+export interface Section {
+  id: string;
+  departmentId: string;
+  name: string;
+  sortOrder: number;
+}
+
 export interface AccountCategory {
   id: string;
   name: string; // 例: 仕入, 消耗品費, 賃借料, 広告宣伝費
@@ -33,6 +41,7 @@ export interface Invoice {
   id: string;
   yearMonth: string; // "YYYY-MM"
   departmentId: string;
+  sectionId: string | null; // 部署内の課(未設定可)
   vendorId: string;
   accountCategoryId: string;
   billedAmount: number; // 請求額
@@ -57,6 +66,7 @@ export interface CompanySettings {
 export interface AppData {
   version: 1;
   departments: Department[];
+  sections: Section[];
   accountCategories: AccountCategory[];
   vendors: Vendor[];
   invoices: Invoice[];

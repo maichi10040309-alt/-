@@ -222,6 +222,27 @@ button:disabled {
   color: var(--color-warn-text);
 }
 
+.section-editor {
+  padding: 8px 4px;
+  border-left: 3px solid var(--color-primary);
+  margin-left: 4px;
+  padding-left: 14px;
+}
+
+.section-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.section-row input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
 .vendor-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

@@ -26,19 +26,36 @@ export function ExpenseSummary({ data }: Props) {
   const [fromMonth, setFromMonth] = useState(thisMonth);
   const [toMonth, setToMonth] = useState(thisMonth);
   const [deptFilter, setDeptFilter] = useState<string>('__all__');
+  const [sectionFilter, setSectionFilter] = useState<string>('__all__');
 
   const months = useMemo(() => monthsInRange(fromMonth, toMonth), [fromMonth, toMonth]);
   const monthSet = new Set(months);
 
   const departments = [...data.departments].sort((a, b) => a.sortOrder - b.sortOrder);
   const accountCategories = [...data.accountCategories].sort((a, b) => a.sortOrder - b.sortOrder);
+  const sectionsInDept = useMemo(
+    () =>
+      deptFilter === '__all__'
+        ? []
+        : data.sections.filter((s) => s.departmentId === deptFilter).sort((a, b) => a.sortOrder - b.sortOrder),
+    [data.sections, deptFilter]
+  );
+  const effectiveSectionFilter = sectionsInDept.some((s) => s.id === sectionFilter) ? sectionFilter : '__all__';
+
+  function handleDeptFilterChange(value: string) {
+    setDeptFilter(value);
+    setSectionFilter('__all__');
+  }
 
   const filtered = useMemo(
     () =>
       data.invoices.filter(
-        (inv) => monthSet.has(inv.yearMonth) && (deptFilter === '__all__' || inv.departmentId === deptFilter)
+        (inv) =>
+          monthSet.has(inv.yearMonth) &&
+          (deptFilter === '__all__' || inv.departmentId === deptFilter) &&
+          (effectiveSectionFilter === '__all__' || inv.sectionId === effectiveSectionFilter)
       ),
-    [data.invoices, monthSet, deptFilter]
+    [data.invoices, monthSet, deptFilter, effectiveSectionFilter]
   );
 
   const totalBilled = filtered.reduce((s, i) => s + i.billedAmount, 0);
@@ -71,6 +88,21 @@ export function ExpenseSummary({ data }: Props) {
       })
       .filter((r) => r.billed !== 0 || r.paid !== 0);
   }, [accountCategories, filtered]);
+
+  const bySection = useMemo(() => {
+    if (sectionsInDept.length === 0) return [];
+    return sectionsInDept
+      .map((s) => {
+        const rows = filtered.filter((i) => i.sectionId === s.id);
+        return {
+          id: s.id,
+          name: s.name,
+          billed: rows.reduce((sum, i) => sum + i.billedAmount, 0),
+          paid: rows.reduce((sum, i) => sum + i.paidAmount, 0),
+        };
+      })
+      .filter((r) => effectiveSectionFilter === r.id || r.billed !== 0 || r.paid !== 0);
+  }, [sectionsInDept, filtered, effectiveSectionFilter]);
 
   const maxDeptBilled = Math.max(1, ...byDepartment.map((r) => r.billed));
 
@@ -107,13 +139,24 @@ export function ExpenseSummary({ data }: Props) {
         </label>
         <label>
           部署
-          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+          <select value={deptFilter} onChange={(e) => handleDeptFilterChange(e.target.value)}>
             <option value="__all__">全部署</option>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
           </select>
         </label>
+        {sectionsInDept.length > 0 && (
+          <label>
+            課
+            <select value={effectiveSectionFilter} onChange={(e) => setSectionFilter(e.target.value)}>
+              <option value="__all__">全課</option>
+              {sectionsInDept.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className="summary-cards">
@@ -152,6 +195,31 @@ export function ExpenseSummary({ data }: Props) {
           ))}
         </div>
       </div>
+
+      {sectionsInDept.length > 0 && (
+        <div className="panel">
+          <h2>課別集計({departments.find((d) => d.id === deptFilter)?.name})</h2>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>課</th>
+                <th>請求額</th>
+                <th>支払額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bySection.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.name}</td>
+                  <td className="col-amount">{formatYen(r.billed)}</td>
+                  <td className="col-amount">{formatYen(r.paid)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {bySection.length === 0 && <p className="hint">データがありません。</p>}
+        </div>
+      )}
 
       <div className="panel">
         <h2>勘定科目別集計(請求額)</h2>
