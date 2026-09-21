@@ -296,6 +296,12 @@ class Store {
   private listeners: Array<() => void> = [];
   private ready = false;
   private loadError: string | null = null;
+  // 進行中の書き込み(Supabaseへの反映待ち)の件数。0より大きい間はrefresh()を
+  // 見送る(取り込みなど大量書き込みの途中でrefreshNow()が走ると、まだ
+  // Supabase側に反映されていない変更がサーバーからの再取得で巻き戻ってしまう
+  // 事故を防ぐため)。書き込みが全て終わった時点で、保留していた再取得を行う。
+  private pendingWrites = 0;
+  private refreshPendingAfterWrites = false;
 
   constructor() {
     void this.refresh(true);
@@ -324,7 +330,24 @@ class Store {
     for (const l of this.listeners) l();
   }
 
+  /** Supabaseへの書き込みPromiseを進行中として登録し、完了時に保留中のrefreshがあれば実行する */
+  private trackWrite(promise: PromiseLike<unknown>) {
+    this.pendingWrites++;
+    Promise.resolve(promise).finally(() => {
+      this.pendingWrites--;
+      if (this.pendingWrites === 0 && this.refreshPendingAfterWrites) {
+        this.refreshPendingAfterWrites = false;
+        void this.refresh(false);
+      }
+    });
+  }
+
   private async refresh(isInitial: boolean) {
+    if (!isInitial && this.pendingWrites > 0) {
+      // 書き込みの反映を待ってから改めて取得する
+      this.refreshPendingAfterWrites = true;
+      return;
+    }
     try {
       const fresh = await fetchAllFromSupabase();
       this.state = fresh;
@@ -354,10 +377,12 @@ class Store {
     if (idx >= 0) this.state.clients[idx] = client;
     else this.state.clients.push(client);
     this.notify();
-    void supabase
-      .from('clients')
-      .upsert(clientToDb(client))
-      .then(({ error }) => error && console.error('client upsert failed', error));
+    this.trackWrite(
+      supabase
+        .from('clients')
+        .upsert(clientToDb(client))
+        .then(({ error }) => error && console.error('client upsert failed', error))
+    );
   }
 
   deleteClient(id: string) {
@@ -367,16 +392,18 @@ class Store {
     this.state.clientEvents = this.state.clientEvents.filter((e) => e.clientId !== id);
     this.state.lateAdjustments = this.state.lateAdjustments.filter((a) => a.clientId !== id);
     this.notify();
-    void (async () => {
-      await Promise.all([
-        supabase.from('usage_entries').delete().eq('client_id', id),
-        supabase.from('invoices').delete().eq('client_id', id),
-        supabase.from('client_events').delete().eq('client_id', id),
-        supabase.from('late_adjustments').delete().eq('client_id', id),
-      ]);
-      const { error } = await supabase.from('clients').delete().eq('id', id);
-      if (error) console.error('client delete failed', error);
-    })();
+    this.trackWrite(
+      (async () => {
+        await Promise.all([
+          supabase.from('usage_entries').delete().eq('client_id', id),
+          supabase.from('invoices').delete().eq('client_id', id),
+          supabase.from('client_events').delete().eq('client_id', id),
+          supabase.from('late_adjustments').delete().eq('client_id', id),
+        ]);
+        const { error } = await supabase.from('clients').delete().eq('id', id);
+        if (error) console.error('client delete failed', error);
+      })()
+    );
   }
 
   // ---- RentalItem ----
@@ -385,20 +412,24 @@ class Store {
     if (idx >= 0) this.state.items[idx] = item;
     else this.state.items.push(item);
     this.notify();
-    void supabase
-      .from('items')
-      .upsert(itemToDb(item))
-      .then(({ error }) => error && console.error('item upsert failed', error));
+    this.trackWrite(
+      supabase
+        .from('items')
+        .upsert(itemToDb(item))
+        .then(({ error }) => error && console.error('item upsert failed', error))
+    );
   }
 
   deleteItem(id: string) {
     this.state.items = this.state.items.filter((i) => i.id !== id);
     this.notify();
-    void supabase
-      .from('items')
-      .delete()
-      .eq('id', id)
-      .then(({ error }) => error && console.error('item delete failed', error));
+    this.trackWrite(
+      supabase
+        .from('items')
+        .delete()
+        .eq('id', id)
+        .then(({ error }) => error && console.error('item delete failed', error))
+    );
   }
 
   // ---- UsageEntry ----
@@ -408,21 +439,23 @@ class Store {
     );
     this.state.usageEntries.push(...entries);
     this.notify();
-    void (async () => {
-      const { error: delErr } = await supabase
-        .from('usage_entries')
-        .delete()
-        .eq('client_id', clientId)
-        .eq('year_month', yearMonth);
-      if (delErr) {
-        console.error('usage_entries delete failed', delErr);
-        return;
-      }
-      if (entries.length > 0) {
-        const { error: insErr } = await supabase.from('usage_entries').insert(entries.map(usageEntryToDb));
-        if (insErr) console.error('usage_entries insert failed', insErr);
-      }
-    })();
+    this.trackWrite(
+      (async () => {
+        const { error: delErr } = await supabase
+          .from('usage_entries')
+          .delete()
+          .eq('client_id', clientId)
+          .eq('year_month', yearMonth);
+        if (delErr) {
+          console.error('usage_entries delete failed', delErr);
+          return;
+        }
+        if (entries.length > 0) {
+          const { error: insErr } = await supabase.from('usage_entries').insert(entries.map(usageEntryToDb));
+          if (insErr) console.error('usage_entries insert failed', insErr);
+        }
+      })()
+    );
   }
 
   // ---- Invoice ----
@@ -431,10 +464,12 @@ class Store {
     if (idx >= 0) this.state.invoices[idx] = invoice;
     else this.state.invoices.push(invoice);
     this.notify();
-    void supabase
-      .from('invoices')
-      .upsert(invoiceToDb(invoice))
-      .then(({ error }) => error && console.error('invoice upsert failed', error));
+    this.trackWrite(
+      supabase
+        .from('invoices')
+        .upsert(invoiceToDb(invoice))
+        .then(({ error }) => error && console.error('invoice upsert failed', error))
+    );
   }
 
   // ---- ClientEvent(新規・終了・休止などの履歴) ----
@@ -443,20 +478,24 @@ class Store {
     if (idx >= 0) this.state.clientEvents[idx] = event;
     else this.state.clientEvents.push(event);
     this.notify();
-    void supabase
-      .from('client_events')
-      .upsert(clientEventToDb(event))
-      .then(({ error }) => error && console.error('client_event upsert failed', error));
+    this.trackWrite(
+      supabase
+        .from('client_events')
+        .upsert(clientEventToDb(event))
+        .then(({ error }) => error && console.error('client_event upsert failed', error))
+    );
   }
 
   deleteClientEvent(id: string) {
     this.state.clientEvents = this.state.clientEvents.filter((e) => e.id !== id);
     this.notify();
-    void supabase
-      .from('client_events')
-      .delete()
-      .eq('id', id)
-      .then(({ error }) => error && console.error('client_event delete failed', error));
+    this.trackWrite(
+      supabase
+        .from('client_events')
+        .delete()
+        .eq('id', id)
+        .then(({ error }) => error && console.error('client_event delete failed', error))
+    );
   }
 
   // ---- LateAdjustment(月遅れ等の調整) ----
@@ -465,37 +504,43 @@ class Store {
     if (idx >= 0) this.state.lateAdjustments[idx] = adjustment;
     else this.state.lateAdjustments.push(adjustment);
     this.notify();
-    void supabase
-      .from('late_adjustments')
-      .upsert(lateAdjustmentToDb(adjustment))
-      .then(({ error }) => error && console.error('late_adjustment upsert failed', error));
+    this.trackWrite(
+      supabase
+        .from('late_adjustments')
+        .upsert(lateAdjustmentToDb(adjustment))
+        .then(({ error }) => error && console.error('late_adjustment upsert failed', error))
+    );
   }
 
   deleteLateAdjustment(id: string) {
     this.state.lateAdjustments = this.state.lateAdjustments.filter((a) => a.id !== id);
     this.notify();
-    void supabase
-      .from('late_adjustments')
-      .delete()
-      .eq('id', id)
-      .then(({ error }) => error && console.error('late_adjustment delete failed', error));
+    this.trackWrite(
+      supabase
+        .from('late_adjustments')
+        .delete()
+        .eq('id', id)
+        .then(({ error }) => error && console.error('late_adjustment delete failed', error))
+    );
   }
 
   // ---- Company settings ----
   updateCompany(company: AppState['company']) {
     this.state.company = company;
     this.notify();
-    void supabase
-      .from('company_settings')
-      .update({
-        company_name: company.companyName,
-        address: company.address,
-        phone: company.phone,
-        fax: company.fax,
-        bank_info: company.bankInfo,
-      })
-      .eq('id', 1)
-      .then(({ error }) => error && console.error('company update failed', error));
+    this.trackWrite(
+      supabase
+        .from('company_settings')
+        .update({
+          company_name: company.companyName,
+          address: company.address,
+          phone: company.phone,
+          fax: company.fax,
+          bank_info: company.bankInfo,
+        })
+        .eq('id', 1)
+        .then(({ error }) => error && console.error('company update failed', error))
+    );
   }
 
   nextInvoiceNo(): string {
@@ -503,11 +548,13 @@ class Store {
     this.state.invoiceSeq += 1;
     const now = new Date();
     const prefix = `${now.getFullYear()}`;
-    void supabase
-      .from('company_settings')
-      .update({ invoice_seq: this.state.invoiceSeq })
-      .eq('id', 1)
-      .then(({ error }) => error && console.error('invoice_seq update failed', error));
+    this.trackWrite(
+      supabase
+        .from('company_settings')
+        .update({ invoice_seq: this.state.invoiceSeq })
+        .eq('id', 1)
+        .then(({ error }) => error && console.error('invoice_seq update failed', error))
+    );
     return `INV-${prefix}-${String(seq).padStart(4, '0')}`;
   }
 }
