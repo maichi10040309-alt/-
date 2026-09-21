@@ -331,15 +331,28 @@ class Store {
   }
 
   /** Supabaseへの書き込みPromiseを進行中として登録し、完了時に保留中のrefreshがあれば実行する */
-  private trackWrite(promise: PromiseLike<unknown>) {
+  private trackWrite(promise: Promise<boolean>): Promise<boolean> {
     this.pendingWrites++;
-    Promise.resolve(promise).finally(() => {
+    return promise.finally(() => {
       this.pendingWrites--;
       if (this.pendingWrites === 0 && this.refreshPendingAfterWrites) {
         this.refreshPendingAfterWrites = false;
         void this.refresh(false);
       }
     });
+  }
+
+  /** Supabaseへの1回の書き込みを実行し、成否をboolean化する(失敗時はコンソールにも記録) */
+  private async runWrite(
+    op: PromiseLike<{ error: { message: string } | null }>,
+    label: string
+  ): Promise<boolean> {
+    const { error } = await op;
+    if (error) {
+      console.error(label, error);
+      return false;
+    }
+    return true;
   }
 
   private async refresh(isInitial: boolean) {
@@ -372,174 +385,146 @@ class Store {
   }
 
   // ---- Client ----
-  upsertClient(client: Client) {
+  /** 戻り値のPromiseはSupabaseへの反映が成功したかどうか(取り込み等、結果を確認したい呼び出し元向け) */
+  upsertClient(client: Client): Promise<boolean> {
     const idx = this.state.clients.findIndex((c) => c.id === client.id);
     if (idx >= 0) this.state.clients[idx] = client;
     else this.state.clients.push(client);
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('clients')
-        .upsert(clientToDb(client))
-        .then(({ error }) => error && console.error('client upsert failed', error))
+    return this.trackWrite(
+      this.runWrite(supabase.from('clients').upsert(clientToDb(client)), 'client upsert failed')
     );
   }
 
-  deleteClient(id: string) {
+  deleteClient(id: string): Promise<boolean> {
     this.state.clients = this.state.clients.filter((c) => c.id !== id);
     this.state.usageEntries = this.state.usageEntries.filter((u) => u.clientId !== id);
     this.state.invoices = this.state.invoices.filter((i) => i.clientId !== id);
     this.state.clientEvents = this.state.clientEvents.filter((e) => e.clientId !== id);
     this.state.lateAdjustments = this.state.lateAdjustments.filter((a) => a.clientId !== id);
     this.notify();
-    this.trackWrite(
+    return this.trackWrite(
       (async () => {
-        await Promise.all([
-          supabase.from('usage_entries').delete().eq('client_id', id),
-          supabase.from('invoices').delete().eq('client_id', id),
-          supabase.from('client_events').delete().eq('client_id', id),
-          supabase.from('late_adjustments').delete().eq('client_id', id),
+        const results = await Promise.all([
+          this.runWrite(supabase.from('usage_entries').delete().eq('client_id', id), 'usage_entries delete failed (deleteClient)'),
+          this.runWrite(supabase.from('invoices').delete().eq('client_id', id), 'invoices delete failed (deleteClient)'),
+          this.runWrite(supabase.from('client_events').delete().eq('client_id', id), 'client_events delete failed (deleteClient)'),
+          this.runWrite(supabase.from('late_adjustments').delete().eq('client_id', id), 'late_adjustments delete failed (deleteClient)'),
         ]);
-        const { error } = await supabase.from('clients').delete().eq('id', id);
-        if (error) console.error('client delete failed', error);
+        const clientOk = await this.runWrite(supabase.from('clients').delete().eq('id', id), 'client delete failed');
+        return results.every(Boolean) && clientOk;
       })()
     );
   }
 
   // ---- RentalItem ----
-  upsertItem(item: RentalItem) {
+  upsertItem(item: RentalItem): Promise<boolean> {
     const idx = this.state.items.findIndex((i) => i.id === item.id);
     if (idx >= 0) this.state.items[idx] = item;
     else this.state.items.push(item);
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('items')
-        .upsert(itemToDb(item))
-        .then(({ error }) => error && console.error('item upsert failed', error))
-    );
+    return this.trackWrite(this.runWrite(supabase.from('items').upsert(itemToDb(item)), 'item upsert failed'));
   }
 
-  deleteItem(id: string) {
+  deleteItem(id: string): Promise<boolean> {
     this.state.items = this.state.items.filter((i) => i.id !== id);
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('items')
-        .delete()
-        .eq('id', id)
-        .then(({ error }) => error && console.error('item delete failed', error))
-    );
+    return this.trackWrite(this.runWrite(supabase.from('items').delete().eq('id', id), 'item delete failed'));
   }
 
   // ---- UsageEntry ----
-  setUsageEntriesForMonth(clientId: string, yearMonth: string, entries: UsageEntry[]) {
+  setUsageEntriesForMonth(clientId: string, yearMonth: string, entries: UsageEntry[]): Promise<boolean> {
     this.state.usageEntries = this.state.usageEntries.filter(
       (u) => !(u.clientId === clientId && u.yearMonth === yearMonth)
     );
     this.state.usageEntries.push(...entries);
     this.notify();
-    this.trackWrite(
+    return this.trackWrite(
       (async () => {
-        const { error: delErr } = await supabase
-          .from('usage_entries')
-          .delete()
-          .eq('client_id', clientId)
-          .eq('year_month', yearMonth);
-        if (delErr) {
-          console.error('usage_entries delete failed', delErr);
-          return;
-        }
-        if (entries.length > 0) {
-          const { error: insErr } = await supabase.from('usage_entries').insert(entries.map(usageEntryToDb));
-          if (insErr) console.error('usage_entries insert failed', insErr);
-        }
+        const delOk = await this.runWrite(
+          supabase.from('usage_entries').delete().eq('client_id', clientId).eq('year_month', yearMonth),
+          'usage_entries delete failed'
+        );
+        if (!delOk) return false;
+        if (entries.length === 0) return true;
+        return this.runWrite(
+          supabase.from('usage_entries').insert(entries.map(usageEntryToDb)),
+          'usage_entries insert failed'
+        );
       })()
     );
   }
 
   // ---- Invoice ----
-  saveInvoice(invoice: Invoice) {
+  saveInvoice(invoice: Invoice): Promise<boolean> {
     const idx = this.state.invoices.findIndex((i) => i.id === invoice.id);
     if (idx >= 0) this.state.invoices[idx] = invoice;
     else this.state.invoices.push(invoice);
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('invoices')
-        .upsert(invoiceToDb(invoice))
-        .then(({ error }) => error && console.error('invoice upsert failed', error))
+    return this.trackWrite(
+      this.runWrite(supabase.from('invoices').upsert(invoiceToDb(invoice)), 'invoice upsert failed')
     );
   }
 
   // ---- ClientEvent(新規・終了・休止などの履歴) ----
-  upsertClientEvent(event: ClientEvent) {
+  upsertClientEvent(event: ClientEvent): Promise<boolean> {
     const idx = this.state.clientEvents.findIndex((e) => e.id === event.id);
     if (idx >= 0) this.state.clientEvents[idx] = event;
     else this.state.clientEvents.push(event);
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('client_events')
-        .upsert(clientEventToDb(event))
-        .then(({ error }) => error && console.error('client_event upsert failed', error))
+    return this.trackWrite(
+      this.runWrite(supabase.from('client_events').upsert(clientEventToDb(event)), 'client_event upsert failed')
     );
   }
 
-  deleteClientEvent(id: string) {
+  deleteClientEvent(id: string): Promise<boolean> {
     this.state.clientEvents = this.state.clientEvents.filter((e) => e.id !== id);
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('client_events')
-        .delete()
-        .eq('id', id)
-        .then(({ error }) => error && console.error('client_event delete failed', error))
+    return this.trackWrite(
+      this.runWrite(supabase.from('client_events').delete().eq('id', id), 'client_event delete failed')
     );
   }
 
   // ---- LateAdjustment(月遅れ等の調整) ----
-  upsertLateAdjustment(adjustment: LateAdjustment) {
+  upsertLateAdjustment(adjustment: LateAdjustment): Promise<boolean> {
     const idx = this.state.lateAdjustments.findIndex((a) => a.id === adjustment.id);
     if (idx >= 0) this.state.lateAdjustments[idx] = adjustment;
     else this.state.lateAdjustments.push(adjustment);
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('late_adjustments')
-        .upsert(lateAdjustmentToDb(adjustment))
-        .then(({ error }) => error && console.error('late_adjustment upsert failed', error))
+    return this.trackWrite(
+      this.runWrite(
+        supabase.from('late_adjustments').upsert(lateAdjustmentToDb(adjustment)),
+        'late_adjustment upsert failed'
+      )
     );
   }
 
-  deleteLateAdjustment(id: string) {
+  deleteLateAdjustment(id: string): Promise<boolean> {
     this.state.lateAdjustments = this.state.lateAdjustments.filter((a) => a.id !== id);
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('late_adjustments')
-        .delete()
-        .eq('id', id)
-        .then(({ error }) => error && console.error('late_adjustment delete failed', error))
+    return this.trackWrite(
+      this.runWrite(supabase.from('late_adjustments').delete().eq('id', id), 'late_adjustment delete failed')
     );
   }
 
   // ---- Company settings ----
-  updateCompany(company: AppState['company']) {
+  updateCompany(company: AppState['company']): Promise<boolean> {
     this.state.company = company;
     this.notify();
-    this.trackWrite(
-      supabase
-        .from('company_settings')
-        .update({
-          company_name: company.companyName,
-          address: company.address,
-          phone: company.phone,
-          fax: company.fax,
-          bank_info: company.bankInfo,
-        })
-        .eq('id', 1)
-        .then(({ error }) => error && console.error('company update failed', error))
+    return this.trackWrite(
+      this.runWrite(
+        supabase
+          .from('company_settings')
+          .update({
+            company_name: company.companyName,
+            address: company.address,
+            phone: company.phone,
+            fax: company.fax,
+            bank_info: company.bankInfo,
+          })
+          .eq('id', 1),
+        'company update failed'
+      )
     );
   }
 
@@ -548,12 +533,11 @@ class Store {
     this.state.invoiceSeq += 1;
     const now = new Date();
     const prefix = `${now.getFullYear()}`;
-    this.trackWrite(
-      supabase
-        .from('company_settings')
-        .update({ invoice_seq: this.state.invoiceSeq })
-        .eq('id', 1)
-        .then(({ error }) => error && console.error('invoice_seq update failed', error))
+    void this.trackWrite(
+      this.runWrite(
+        supabase.from('company_settings').update({ invoice_seq: this.state.invoiceSeq }).eq('id', 1),
+        'invoice_seq update failed'
+      )
     );
     return `INV-${prefix}-${String(seq).padStart(4, '0')}`;
   }

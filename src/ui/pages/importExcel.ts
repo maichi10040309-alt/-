@@ -154,13 +154,31 @@ export function openImportModal() {
       `${parsed.clients.length}名の利用者について、${formatYmJapanese(targetMonth)}分の利用状況を取り込みます。よろしいですか?\n(既に入力済みの場合は上書きされます)`
     );
     if (!ok) return;
-    commitImport(parsed, targetMonth);
+    commitBtn.disabled = true;
+    commitBtn.textContent = '取り込み中…';
+    const { failedNames } = await commitImport(parsed, targetMonth);
+    commitBtn.disabled = false;
+    commitBtn.textContent = 'この内容を取り込む';
     close();
-    await showAlert('取り込みが完了しました。「利用者マスタ」「月次利用入力」で内容をご確認ください。');
+    if (failedNames.length > 0) {
+      await showAlert(
+        `取り込みは完了しましたが、以下の${failedNames.length}名は保存に失敗しました(通信状況などの一時的な問題の可能性があります)。お手数ですが再度取り込みをお試しください。\n\n${failedNames.join('、')}`
+      );
+    } else {
+      await showAlert('取り込みが完了しました。「利用者マスタ」「月次利用入力」で内容をご確認ください。');
+    }
   });
 }
 
-function commitImport(result: ImportResult, targetMonth: string) {
+// Supabaseへの同時書き込み数が増えすぎないよう、利用者を少数ずつのバッチに分けて
+// 順番に取り込む(バッチ内は並列)。全て完了を待ってから画面を閉じることで、
+// 「取り込み直後は表示されるが裏の保存が終わる前に他の操作で巻き戻る」事故も防ぐ。
+const IMPORT_BATCH_SIZE = 5;
+
+async function commitImport(
+  result: ImportResult,
+  targetMonth: string
+): Promise<{ successCount: number; failedNames: string[] }> {
   const state = store.getState();
   const existingKeyToId = new Map<string, string>();
   for (const c of state.clients) {
@@ -171,9 +189,30 @@ function commitImport(result: ImportResult, targetMonth: string) {
     itemNameToId.set(i.name, i.id);
   }
 
+  // 品目マスタへの新規追加は件数が少なく、以降の利用者処理がこのIDに依存するため先に確定させる
   for (const imported of result.clients) {
+    for (const line of imported.lines) {
+      if (itemNameToId.has(line.itemName)) continue;
+      const itemId = newId();
+      const newItem: RentalItem = {
+        id: itemId,
+        name: line.itemName,
+        category: line.billingType === 'insurance' ? '介護保険品目' : '自費品目',
+        billingType: line.billingType,
+        unitPrice: line.billingType === 'private' ? line.unitPrice : 0,
+        note: 'Excel取り込みにより自動追加',
+      };
+      await store.upsertItem(newItem);
+      itemNameToId.set(line.itemName, itemId);
+    }
+  }
+
+  const failedNames: string[] = [];
+
+  async function importOne(imported: ImportedClient): Promise<void> {
     const key = clientMatchKey(imported.name, imported.kana);
     let clientId = existingKeyToId.get(key);
+    let clientOk: boolean;
     if (clientId) {
       const existing = state.clients.find((c) => c.id === clientId)!;
       const updated: Client = {
@@ -185,7 +224,7 @@ function commitImport(result: ImportResult, targetMonth: string) {
         careOfficeName: imported.careOfficeName || existing.careOfficeName,
         careManagerName: imported.careManagerName || existing.careManagerName,
       };
-      store.upsertClient(updated);
+      clientOk = await store.upsertClient(updated);
     } else {
       clientId = newId();
       const newClient: Client = {
@@ -203,25 +242,12 @@ function commitImport(result: ImportResult, targetMonth: string) {
         status: 'active',
         note: '',
       };
-      store.upsertClient(newClient);
+      clientOk = await store.upsertClient(newClient);
       existingKeyToId.set(key, clientId);
     }
 
     const entries: UsageEntry[] = imported.lines.map((line) => {
-      let itemId = itemNameToId.get(line.itemName);
-      if (!itemId) {
-        itemId = newId();
-        const newItem: RentalItem = {
-          id: itemId,
-          name: line.itemName,
-          category: line.billingType === 'insurance' ? '介護保険品目' : '自費品目',
-          billingType: line.billingType,
-          unitPrice: line.billingType === 'private' ? line.unitPrice : 0,
-          note: 'Excel取り込みにより自動追加',
-        };
-        store.upsertItem(newItem);
-        itemNameToId.set(line.itemName, itemId);
-      }
+      const itemId = itemNameToId.get(line.itemName)!;
       const unitPrice = lineUnitPrice(line, imported.copayRatio);
       return {
         id: newId(),
@@ -238,6 +264,14 @@ function commitImport(result: ImportResult, targetMonth: string) {
       };
     });
 
-    store.setUsageEntriesForMonth(clientId, targetMonth, entries);
+    const usageOk = await store.setUsageEntriesForMonth(clientId, targetMonth, entries);
+    if (!clientOk || !usageOk) failedNames.push(imported.name);
   }
+
+  for (let i = 0; i < result.clients.length; i += IMPORT_BATCH_SIZE) {
+    const batch = result.clients.slice(i, i + IMPORT_BATCH_SIZE);
+    await Promise.all(batch.map(importOne));
+  }
+
+  return { successCount: result.clients.length - failedNames.length, failedNames };
 }
