@@ -156,7 +156,15 @@ export function openImportModal() {
     if (!ok) return;
     commitBtn.disabled = true;
     commitBtn.textContent = '取り込み中…';
-    const { failedNames } = await commitImport(parsed, targetMonth);
+    let failedNames: string[] = [];
+    try {
+      ({ failedNames } = await commitImport(parsed, targetMonth));
+    } catch (err) {
+      commitBtn.disabled = false;
+      commitBtn.textContent = 'この内容を取り込む';
+      await showAlert(`取り込み中にエラーが発生しました: ${String(err)}\n再度お試しください。`);
+      return;
+    }
     commitBtn.disabled = false;
     commitBtn.textContent = 'この内容を取り込む';
     close();
@@ -207,9 +215,7 @@ async function commitImport(
     }
   }
 
-  const failedNames: string[] = [];
-
-  async function importOne(imported: ImportedClient): Promise<void> {
+  async function importOne(imported: ImportedClient): Promise<boolean> {
     const key = clientMatchKey(imported.name, imported.kana);
     let clientId = existingKeyToId.get(key);
     let clientOk: boolean;
@@ -265,13 +271,25 @@ async function commitImport(
     });
 
     const usageOk = await store.setUsageEntriesForMonth(clientId, targetMonth, entries);
-    if (!clientOk || !usageOk) failedNames.push(imported.name);
+    return clientOk && usageOk;
   }
 
-  for (let i = 0; i < result.clients.length; i += IMPORT_BATCH_SIZE) {
-    const batch = result.clients.slice(i, i + IMPORT_BATCH_SIZE);
-    await Promise.all(batch.map(importOne));
+  async function importAll(clients: ImportedClient[]): Promise<ImportedClient[]> {
+    const failed: ImportedClient[] = [];
+    for (let i = 0; i < clients.length; i += IMPORT_BATCH_SIZE) {
+      const batch = clients.slice(i, i + IMPORT_BATCH_SIZE);
+      const results = await Promise.all(batch.map(importOne));
+      batch.forEach((c, idx) => {
+        if (!results[idx]) failed.push(c);
+      });
+    }
+    return failed;
   }
 
+  const failedFirstPass = await importAll(result.clients);
+  // 通信の一時的な瞬断などによる失敗を想定し、失敗した分だけもう一度だけ再試行する
+  const stillFailed = failedFirstPass.length > 0 ? await importAll(failedFirstPass) : [];
+
+  const failedNames = stillFailed.map((c) => c.name);
   return { successCount: result.clients.length - failedNames.length, failedNames };
 }

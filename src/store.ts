@@ -342,17 +342,28 @@ class Store {
     });
   }
 
-  /** Supabaseへの1回の書き込みを実行し、成否をboolean化する(失敗時はコンソールにも記録) */
+  /**
+   * Supabaseへの1回の書き込みを実行し、成否をboolean化する(失敗時はコンソールにも記録)。
+   * ネットワーク断・タイムアウトなど、Supabase側が{error}を返す前に例外として
+   * 投げてくる失敗もここで必ず捕まえる。ここで例外を外に漏らすと、Excel一括取り込みの
+   * ようにPromise.allでまとめてawaitしている処理全体が、1件のネットワーク瞬断だけで
+   * 丸ごと中断してしまう(以降の利用者が軒並み未処理のまま残る)ため。
+   */
   private async runWrite(
     op: PromiseLike<{ error: { message: string } | null }>,
     label: string
   ): Promise<boolean> {
-    const { error } = await op;
-    if (error) {
-      console.error(label, error);
+    try {
+      const { error } = await op;
+      if (error) {
+        console.error(label, error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error(label, err);
       return false;
     }
-    return true;
   }
 
   private async refresh(isInitial: boolean) {
