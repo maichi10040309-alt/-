@@ -17,8 +17,20 @@ type Mode = 'list' | 'history';
 let mode: Mode = 'list';
 let currentRoot: HTMLElement | null = null;
 
+// 他画面(月次利用入力など)から特定の利用者の編集画面をすぐ開きたいときに使う、
+// 一度だけ消費されるフラグ。ルーティングにIDを含めない(store更新のたびに
+// 発生する疑似hashchangeで編集モーダルが繰り返し開いてしまうのを避けるため)。
+let pendingFocusClientId: string | null = null;
+
+export function focusClientOnNextRender(clientId: string) {
+  pendingFocusClientId = clientId;
+}
+
 export function renderClientsPage(root: HTMLElement) {
   currentRoot = root;
+  if (pendingFocusClientId) {
+    mode = 'list';
+  }
   root.innerHTML = `
     <div style="margin-bottom:16px">
       <button class="btn btn-sm ${mode === 'list' ? 'btn-primary' : ''}" id="tab-list">👤 利用者一覧</button>
@@ -41,6 +53,13 @@ export function renderClientsPage(root: HTMLElement) {
     renderHistorySection(section);
   } else {
     renderListSection(section);
+  }
+
+  if (pendingFocusClientId) {
+    const id = pendingFocusClientId;
+    pendingFocusClientId = null;
+    const client = store.getState().clients.find((c) => c.id === id);
+    if (client) openClientModal(client);
   }
 }
 

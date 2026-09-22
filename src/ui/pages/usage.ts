@@ -5,7 +5,8 @@ import { escapeHtml, formatYen } from '@/utils/format';
 import { addMonths, currentYearMonth, formatYmJapanese } from '@/utils/date';
 import { openImportModal } from '@/ui/pages/importExcel';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
-import { clientStatusBadge } from '@/ui/pages/clients';
+import { clientStatusBadge, focusClientOnNextRender } from '@/ui/pages/clients';
+import { navigate } from '@/ui/router';
 
 interface DraftRow {
   itemId: string;
@@ -69,6 +70,11 @@ function editClient(clientId: string) {
   selectedClientId = clientId;
   mode = 'input';
   if (currentRoot) renderUsagePage(currentRoot);
+}
+
+function goToClientMaster(clientId: string) {
+  focusClientOnNextRender(clientId);
+  navigate('clients');
 }
 
 // ==================== 一覧タブ ====================
@@ -173,7 +179,10 @@ function renderListRows(
         <td class="num">${formatYen(nonTaxableTotal)}</td>
         <td class="num">${formatYen(taxableTotal)}</td>
         <td class="num">${formatYen(total)}</td>
-        <td class="actions-cell"><button class="btn-link js-edit-client" data-id="${c.id}">入力へ</button></td>
+        <td class="actions-cell">
+          <button class="btn-link js-edit-client" data-id="${c.id}">入力へ</button>
+          <button class="btn-link js-view-client" data-id="${c.id}">利用者マスタへ</button>
+        </td>
       </tr>
     `;
   });
@@ -194,6 +203,13 @@ function renderListRows(
       if (id) editClient(id);
     })
   );
+
+  tbody.querySelectorAll('.js-view-client').forEach((el) =>
+    el.addEventListener('click', (e) => {
+      const id = (e.target as HTMLElement).dataset.id;
+      if (id) goToClientMaster(id);
+    })
+  );
 }
 
 // ==================== 入力タブ ====================
@@ -210,14 +226,17 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
         <div class="form-grid" style="margin-bottom:16px">
           <div class="form-field">
             <label>利用者</label>
-            <select id="f-client">
-              ${sortedClients
-                .map(
-                  (c) =>
-                    `<option value="${c.id}" ${c.id === selectedClientId ? 'selected' : ''}>${escapeHtml(c.name)}${c.status === 'active' ? '' : `(${CLIENT_STATUS_LABELS[c.status]})`}</option>`
-                )
-                .join('')}
-            </select>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="f-client" style="flex:1">
+                ${sortedClients
+                  .map(
+                    (c) =>
+                      `<option value="${c.id}" ${c.id === selectedClientId ? 'selected' : ''}>${escapeHtml(c.name)}${c.status === 'active' ? '' : `(${CLIENT_STATUS_LABELS[c.status]})`}</option>`
+                  )
+                  .join('')}
+              </select>
+              <button class="btn-link" id="btn-view-client" type="button">利用者マスタへ</button>
+            </div>
           </div>
           <div class="form-field">
             <label>対象月</label>
@@ -269,6 +288,10 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
     selectedClientId = (e.target as HTMLSelectElement).value;
     loadDraftFromStore();
     renderRows(items);
+  });
+
+  section.querySelector('#btn-view-client')?.addEventListener('click', () => {
+    if (selectedClientId) goToClientMaster(selectedClientId);
   });
 
   section.querySelector('#f-month')?.addEventListener('change', (e) => {
