@@ -1741,3 +1741,27 @@ textarea:focus {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* 合計請求書: ヒサゴGB1116プレ印刷用紙対応(枠線・見出しは印字済みの用紙側にあるため、
+   文字だけを実測座標(mm)で配置する。画面プレビューでも用紙の大きさが分かるよう、
+   薄い枠線を付けておく) */
+.ci-hisago-page-outer {
+  width: 210mm;
+  height: 297mm;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+.ci-hisago-page {
+  position: relative;
+  width: 210mm;
+  height: 297mm;
+  font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif;
+  color: #000;
+}
+
+@media print {
+  .ci-hisago-page-outer {
+    border: none;
+  }
+}

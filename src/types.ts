@@ -54,6 +54,9 @@ export interface CompanyInfo {
   taxRounding: 'floor' | 'round' | 'ceil';
   nextDocNumber: Partial<Record<DocumentType, number>>;
   deliveryTagOptions: string[]; // 納品書の配送区分(直送・店頭・営業担当者名など)の選択肢
+  consolidatedInvoicePaper: 'default' | 'hisago_gb1116'; // 合計請求書の印刷用紙(白紙 or ヒサゴGB1116プレ印刷用紙)
+  consolidatedInvoicePrintOffsetX: number; // ヒサゴ用紙印刷時の位置微調整(mm、プラスで右にずらす)
+  consolidatedInvoicePrintOffsetY: number; // 同上(mm、プラスで下にずらす)
 }
 
 export type PriceTier = 1 | 2 | 3;

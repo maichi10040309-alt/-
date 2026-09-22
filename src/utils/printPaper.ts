@@ -8,9 +8,14 @@ export function getPaperClass(docType: DocumentType): string {
   return docType === 'invoice' ? 'print-page-invoice' : '';
 }
 
-export function getPaperCss(docType: DocumentType): string | null {
+export function getPaperCss(docType: DocumentType, consolidatedInvoicePaper?: 'default' | 'hisago_gb1116'): string | null {
   if (docType === 'delivery') return '@page { size: 210mm 297mm; margin: 4mm 6mm; }';
   if (docType === 'invoice') return '@page { size: 210mm 297mm; margin: 15mm 15mm 15mm 22mm; }';
-  if (docType === 'consolidated_invoice') return '@page { size: 210mm 297mm; margin: 10mm 12mm; }';
+  if (docType === 'consolidated_invoice') {
+    // ヒサゴGB1116(プレ印刷用紙)に印刷する場合、用紙の罫線・見出しに合わせて文字だけを絶対座標(mm)で
+    // 配置するため、ページ余白を0にしてmm座標がそのまま紙上の位置になるようにする
+    if (consolidatedInvoicePaper === 'hisago_gb1116') return '@page { size: 210mm 297mm; margin: 0; }';
+    return '@page { size: 210mm 297mm; margin: 10mm 12mm; }';
+  }
   return null;
 }

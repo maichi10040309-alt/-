@@ -225,6 +225,43 @@ export default function Settings() {
             <option value="ceil">切り上げ</option>
           </select>
         </label>
+
+        <div className="section-divider col-span-2">合計請求書の印刷用紙</div>
+        <label className="col-span-2">
+          印刷レイアウト
+          <select
+            value={company.consolidatedInvoicePaper}
+            onChange={(e) => set('consolidatedInvoicePaper', e.target.value as CompanyInfo['consolidatedInvoicePaper'])}
+          >
+            <option value="default">白紙に印刷(枠線も自動で印刷)</option>
+            <option value="hisago_gb1116">ヒサゴ GB1116(プレ印刷用紙)に印刷</option>
+          </select>
+        </label>
+        {company.consolidatedInvoicePaper === 'hisago_gb1116' && (
+          <>
+            <p className="hint col-span-2">
+              ヒサゴGB1116の罫線に合わせて文字だけを印刷します。プリンターや給紙トレイによって数mmずれることがあるため、実際に試し印刷をして、ずれている場合はここで微調整してください(単位はmm、右方向・下方向がプラスです)。
+            </p>
+            <label>
+              左右位置の微調整(mm)
+              <input
+                type="number"
+                step="0.5"
+                value={company.consolidatedInvoicePrintOffsetX}
+                onChange={(e) => set('consolidatedInvoicePrintOffsetX', Number(e.target.value))}
+              />
+            </label>
+            <label>
+              上下位置の微調整(mm)
+              <input
+                type="number"
+                step="0.5"
+                value={company.consolidatedInvoicePrintOffsetY}
+                onChange={(e) => set('consolidatedInvoicePrintOffsetY', Number(e.target.value))}
+              />
+            </label>
+          </>
+        )}
       </div>
 
       <div className="card">

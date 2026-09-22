@@ -34,6 +34,9 @@ function defaultCompany() {
     taxRounding: 'floor',
     nextDocNumber: {},
     deliveryTagOptions: ['直送', '店頭'],
+    consolidatedInvoicePaper: 'default',
+    consolidatedInvoicePrintOffsetX: 0,
+    consolidatedInvoicePrintOffsetY: 0,
   };
 }
 

@@ -6,6 +6,7 @@ import { DOCUMENT_TYPE_LABEL } from '../types';
 import DocumentPrintSheet from '../components/DocumentPrintSheet';
 import DeliveryNotePrint from '../components/DeliveryNotePrint';
 import ConsolidatedInvoicePrint from '../components/ConsolidatedInvoicePrint';
+import ConsolidatedInvoicePrintHisago from '../components/ConsolidatedInvoicePrintHisago';
 import { getPaperCss } from '../utils/printPaper';
 
 export default function DocumentPrintBatch() {
@@ -42,9 +43,10 @@ export default function DocumentPrintBatch() {
   }, [idsParam]);
 
   const label = DOCUMENT_TYPE_LABEL[docType] ?? '伝票';
-  const pageCss = getPaperCss(docType);
 
   if (!company || !docs) return <div className="card">読み込み中...</div>;
+
+  const pageCss = getPaperCss(docType, company.consolidatedInvoicePaper);
 
   if (docs.length === 0) {
     return (
@@ -76,7 +78,11 @@ export default function DocumentPrintBatch() {
           {docType === 'delivery' ? (
             <DeliveryNotePrint doc={doc} customer={customerMap.get(doc.customerId)} company={company} products={products} />
           ) : docType === 'consolidated_invoice' ? (
-            <ConsolidatedInvoicePrint doc={doc} customer={customerMap.get(doc.customerId)} company={company} />
+            company.consolidatedInvoicePaper === 'hisago_gb1116' ? (
+              <ConsolidatedInvoicePrintHisago doc={doc} customer={customerMap.get(doc.customerId)} company={company} />
+            ) : (
+              <ConsolidatedInvoicePrint doc={doc} customer={customerMap.get(doc.customerId)} company={company} />
+            )
           ) : (
             <DocumentPrintSheet doc={doc} customer={customerMap.get(doc.customerId)} company={company} docType={docType} />
           )}
