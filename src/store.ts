@@ -236,22 +236,47 @@ function lateAdjustmentToDb(a: LateAdjustment) {
 
 // ==================== Supabaseからの一括取得 ====================
 
+// PostgREST(Supabase)は select('*') だけだとサーバー側の既定の行数上限で
+// 結果が切り詰められることがある(データ件数が多い利用者ほど影響を受け、
+// 「読み込むたびに一部の利用者が消える」ように見える不具合の原因だった)。
+// .range() で明示的にページングし、上限に関わらず全件を確実に取得する。
+// サーバー側の上限が、ここで指定するFETCH_PAGE_SIZEより小さい可能性も
+// あるため、「要求したページサイズちょうど返ってきたか」ではなく、
+// 「実際に返ってきた件数」を見てfromを進め、空ページが返るまで続ける
+// (サーバーが要求より少ない件数しか返さない場合でも正しく全件たどれる)。
+const FETCH_PAGE_SIZE = 500;
+
+async function fetchAllRows<T extends Record<string, unknown>>(table: string): Promise<T[]> {
+  const rows: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .range(from, from + FETCH_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as T[];
+    if (page.length === 0) break;
+    rows.push(...page);
+    from += page.length;
+  }
+  return rows;
+}
+
 async function fetchAllFromSupabase(): Promise<AppState> {
-  const [clientsRes, itemsRes, usageRes, invoicesRes, eventsRes, adjustmentsRes, companyRes] = await Promise.all([
-    supabase.from('clients').select('*'),
-    supabase.from('items').select('*'),
-    supabase.from('usage_entries').select('*'),
-    supabase.from('invoices').select('*'),
-    supabase.from('client_events').select('*'),
-    supabase.from('late_adjustments').select('*'),
+  const [clientRows, itemRows, usageRows, invoiceRows, eventRows, adjustmentRows, companyRes] = await Promise.all([
+    fetchAllRows<Record<string, unknown>>('clients'),
+    fetchAllRows<Record<string, unknown>>('items'),
+    fetchAllRows<Record<string, unknown>>('usage_entries'),
+    fetchAllRows<Record<string, unknown>>('invoices'),
+    fetchAllRows<Record<string, unknown>>('client_events'),
+    fetchAllRows<Record<string, unknown>>('late_adjustments'),
     supabase.from('company_settings').select('*').eq('id', 1).maybeSingle(),
   ]);
 
-  for (const res of [clientsRes, itemsRes, usageRes, invoicesRes, eventsRes, adjustmentsRes, companyRes]) {
-    if (res.error) throw res.error;
-  }
+  if (companyRes.error) throw companyRes.error;
 
-  let items = (itemsRes.data ?? []).map(itemFromDb);
+  let items = itemRows.map(itemFromDb);
   if (items.length === 0) {
     // 品目マスタが空(初回セットアップ時)は、初期品目をSupabase側にも投入しておく。
     const seeded = DEFAULT_ITEMS.map((item) => ({ ...item, id: newId() }));
@@ -273,14 +298,14 @@ async function fetchAllFromSupabase(): Promise<AppState> {
 
   return {
     version: 1,
-    clients: (clientsRes.data ?? []).map(clientFromDb),
+    clients: clientRows.map(clientFromDb),
     items,
-    usageEntries: (usageRes.data ?? []).map(usageEntryFromDb),
-    invoices: (invoicesRes.data ?? []).map(invoiceFromDb),
+    usageEntries: usageRows.map(usageEntryFromDb),
+    invoices: invoiceRows.map(invoiceFromDb),
     invoiceSeq,
     company,
-    clientEvents: (eventsRes.data ?? []).map(clientEventFromDb),
-    lateAdjustments: (adjustmentsRes.data ?? []).map(lateAdjustmentFromDb),
+    clientEvents: eventRows.map(clientEventFromDb),
+    lateAdjustments: adjustmentRows.map(lateAdjustmentFromDb),
   };
 }
 
