@@ -161,16 +161,17 @@ function ConsolidatedInvoicePageHisago({
         {customer?.name ?? '(得意先未設定)'}　御中
       </Field>
 
-      {/* 締切日・請求書No.(プレ印刷の「年」「月」「日」の直前に、各数値の右端を合わせる) */}
+      {/* 締切日・請求書No.(プレ印刷の「年」「月」「日」の直前に、各数値の右端を合わせる)
+          ※ご指摘により、実際の用紙に合わせて基準位置から上に7mm・右に9mm補正済み */}
       {pageIndex === 0 && (
         <>
-          <Field right={120} top={23} align="right">
+          <Field right={129} top={16} align="right">
             {y}
           </Field>
-          <Field right={140} top={23} align="right">
+          <Field right={149} top={16} align="right">
             {m ? Number(m) : ''}
           </Field>
-          <Field right={161} top={23} align="right">
+          <Field right={170} top={16} align="right">
             {d ? Number(d) : ''}
           </Field>
         </>
