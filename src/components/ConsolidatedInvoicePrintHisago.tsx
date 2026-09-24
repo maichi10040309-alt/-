@@ -140,14 +140,19 @@ function ConsolidatedInvoicePageHisago({
   const bankFee = doc.bankFee ?? 0;
   const carryOver = previousBalance - paymentsAmount - bankFee;
   const currentBilling = carryOver + totals.grandTotal;
-  const [y, m, d] = (doc.periodTo || '').split('-');
+  // 締め処理で新しく発行した合計請求書はperiodToを持つが、この機能を追加する前の
+  // 旧ソフトからの取り込みデータにはperiodTo(対象期間)が保存されていないため、
+  // その場合は発行日を締切日として代わりに使う
+  const [y, m, d] = (doc.periodTo || doc.issueDate || '').split('-');
 
   return (
     <>
       {/* 宛先(自由配置。用紙側に罫線・見出しは無い) */}
-      <Field left={20} top={15} size={3.2}>
-        〒{customer?.zip}
-      </Field>
+      {customer?.zip && (
+        <Field left={20} top={15} size={3.2}>
+          〒{customer.zip}
+        </Field>
+      )}
       <Field left={20} top={19.5} size={3.2}>
         {customer?.address1}
         {customer?.address2}
@@ -182,7 +187,8 @@ function ConsolidatedInvoicePageHisago({
             {company.name}
           </Field>
           <Field left={108} top={32} size={2.7}>
-            〒{company.zip} {company.address1}
+            {company.zip && `〒${company.zip} `}
+            {company.address1}
             {company.address2}
           </Field>
           <Field left={108} top={36.5} size={2.7}>
