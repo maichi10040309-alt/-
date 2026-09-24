@@ -30,6 +30,16 @@ const COL = {
   noteRight: 199.5,
 };
 
+// 伝票No.欄は幅が約13mmしかなく、当システムが発行する伝票番号(例: 「D-2026-0001」)は
+// そのままでは収まらず省略表示になってしまう。「D-」のような種別接頭辞と、年を2桁に
+// 短縮することで、実用上ほぼ収まる長さにする(旧ソフトの番号など元々短いものはそのまま)。
+function shortenSlipNumber(number: string): string {
+  const m = number.match(/^[A-Za-z]+-(\d{4})-(\d+)$/);
+  if (!m) return number;
+  const [, yearStr, seq] = m;
+  return `${yearStr.slice(2)}-${seq}`;
+}
+
 function Field({
   left,
   right,
@@ -164,6 +174,48 @@ function ConsolidatedInvoicePageHisago({
         {doc.number}
       </Field>
 
+      {/* 自社情報・振込先情報(用紙の「年月日締切分No.」欄と集計欄の間は印刷済みの罫線・見出しが
+          無い空白部分のため、ここに設定画面で登録した内容を差し込む) */}
+      {pageIndex === 0 && (
+        <>
+          <Field left={108} top={27} size={4} bold>
+            {company.name}
+          </Field>
+          <Field left={108} top={32} size={2.7}>
+            〒{company.zip} {company.address1}
+            {company.address2}
+          </Field>
+          <Field left={108} top={36.5} size={2.7}>
+            {company.tel && `TEL:${company.tel}`} {company.fax && `FAX:${company.fax}`}
+          </Field>
+          {company.invoiceRegistrationNumber && (
+            <Field left={108} top={41} size={2.7}>
+              登録番号：{company.invoiceRegistrationNumber}
+            </Field>
+          )}
+          {company.sealImageDataUrl && (
+            <img
+              src={company.sealImageDataUrl}
+              alt="会社印"
+              style={{ position: 'absolute', left: '178mm', top: '25mm', width: '20mm', height: '20mm', objectFit: 'contain' }}
+            />
+          )}
+          {(company.bankBranch || company.bankAccount || company.bankAccountHolder) && (
+            <>
+              <Field left={108} top={54} size={2.7}>
+                {company.bankBranch}
+              </Field>
+              <Field left={108} top={58} size={2.7}>
+                {company.bankAccount}
+              </Field>
+              <Field left={108} top={62} size={2.7}>
+                {company.bankAccountHolder}
+              </Field>
+            </>
+          )}
+        </>
+      )}
+
       {/* お客様コードNo. */}
       <Field left={48} top={56.5}>
         {customer?.code ?? ''}
@@ -202,7 +254,7 @@ function ConsolidatedInvoicePageHisago({
               {formatDateShort(s.date)}
             </Field>
             <Field left={COL.number} right={49.5} top={top} size={2.6}>
-              {s.number}
+              {shortenSlipNumber(s.number)}
             </Field>
             <Field left={COL.nameLeft} right={COL.nameRight} top={top} size={3}>
               {s.title}
