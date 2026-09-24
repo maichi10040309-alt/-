@@ -162,21 +162,21 @@ function ConsolidatedInvoicePageHisago({
       </Field>
 
       {/* 締切日・請求書No.(プレ印刷の「年」「月」「日」の直前に、各数値の右端を合わせる)
-          ※ご指摘により、実際の用紙に合わせて基準位置から上に7mm・右に9mm補正済み */}
+          ※実際の印刷物とスキャン画像を突き合わせて位置を再計測し補正済み */}
       {pageIndex === 0 && (
         <>
-          <Field right={129} top={16} align="right">
+          <Field right={122} top={16} align="right">
             {y}
           </Field>
-          <Field right={149} top={16} align="right">
+          <Field right={135} top={16} align="right">
             {m ? Number(m) : ''}
           </Field>
-          <Field right={170} top={16} align="right">
+          <Field right={148} top={16} align="right">
             {d ? Number(d) : ''}
           </Field>
         </>
       )}
-      <Field left={192} top={23}>
+      <Field left={185} top={16}>
         {doc.number}
       </Field>
 
