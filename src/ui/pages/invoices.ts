@@ -1,3 +1,5 @@
+import { invoiceDebitDates } from '@/utils/debitDate';
+import { fitInvoiceForPrint } from '@/utils/invoicePrint';
 import { store, newId } from '@/store';
 import type { BillingType, Client, CopayRatio, Invoice, LateAdjustment, TaxCategory } from '@/types';
 import { INVOICE_BILLING_CATEGORY_LABELS, TAX_CATEGORY_LABELS } from '@/types';
@@ -706,6 +708,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   const client = store.getState().clients.find((c) => c.id === invoice.clientId);
   const company = store.getState().company;
 
+  const debitDates = invoiceDebitDates(invoice);
   const issueDateLabel = invoice.issuedDate ? formatDateJapanese(invoice.issuedDate) : formatDateJapanese(todayIso());
   // 負担割合は介護保険分の請求書のみ意味を持つ(自費分は自己負担割合の概念がないため表示しない)
   const ratioLabel = client && invoice.billingCategory !== 'private' ? COMPACT_COPAY_LABELS[client.copayRatio] : '';
@@ -777,6 +780,10 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
         </tbody>
       </table>
 
+      <div class="inv-debit-dates">
+        <div><span>引落日</span><strong>${formatDateJapanese(debitDates.current)}</strong></div>
+        <div><span>次回引落日</span><strong>${formatDateJapanese(debitDates.next)}</strong></div>
+      </div>
       <p class="inv-footer">ご不明な点等ございましたら、ご連絡頂きますようお願い致します。</p>
 
       ${
@@ -794,7 +801,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   `;
 
   root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
-  root.querySelector('#btn-print')?.addEventListener('click', () => window.print());
+  root.querySelector('#btn-print')?.addEventListener('click', () => { fitInvoiceForPrint(); window.print(); });
   root.querySelector('#btn-issue')?.addEventListener('click', async () => {
     if (!(await showConfirm('この請求書を発行済みにします。よろしいですか?'))) return;
     const invoiceNo = invoice.invoiceNo || store.nextInvoiceNo();
@@ -837,7 +844,8 @@ function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel:
       <td class="num">${formatYen(month.taxableSubtotal)}</td>
       <td class="num">${formatYen(month.subtotal)}</td>
       <td>
-        <input type="text" class="js-month-note inv-note-input" data-index="${idx}" value="${escapeHtml(month.note)}" />
+        <input type="text" class="js-month-note inv-note-input no-print" data-index="${idx}" value="${escapeHtml(month.note)}" />
+        <span class="inv-note-print">${escapeHtml(month.note)}</span>
       </td>
     </tr>
   `;

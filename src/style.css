@@ -701,3 +701,64 @@ table.data-table {
     display: block;
   }
 }
+
+/* A4縦: 210×297mm、余白12mm。画面も同じ紙面幅で表示する。 */
+@page { size: A4 portrait; margin: 12mm; }
+.invoice-sheet {
+  width: 186mm;
+  max-width: 100%;
+  min-height: 272mm;
+  padding: 12mm;
+  display: flex;
+  flex-direction: column;
+  color: #111;
+  background: #fff;
+  --color-text: #111;
+  --color-text-muted: #444;
+  --color-border: #bbb;
+  --color-surface-alt: #f5f5f5;
+}
+.inv-table { table-layout: fixed; }
+.inv-table th:first-child { width: 24%; }
+.inv-table th:nth-child(2) { width: 10%; }
+.inv-table th:nth-child(3), .inv-table th:nth-child(4) { width: 15%; }
+.inv-table th:nth-child(5) { width: 20%; }
+.inv-table th:last-child { width: 16%; }
+.inv-table th, .inv-table td { padding: 3mm 1.5mm; overflow-wrap: anywhere; }
+.inv-table .num { text-align: right; }
+.inv-debit-dates {
+  margin-top: auto;
+  padding-top: 12mm;
+  align-self: flex-end;
+  font-size: 14px;
+  line-height: 2;
+}
+.inv-debit-dates div { display: flex; justify-content: space-between; gap: 8mm; }
+.inv-debit-dates strong { font-weight: 600; white-space: nowrap; }
+.invoice-sheet .inv-footer { margin: 6mm 0 0; font-size: 11px; }
+.invoice-measure-print, #invoice-sheet.invoice-measure-print {
+  width: 186mm; max-width: none; min-height: 272mm; padding: 8mm;
+}
+.invoice-measure-print .no-print { display: none !important; }
+@media print {
+  html, body, #app, .main, .content { margin: 0; padding: 0; min-height: 0; width: 186mm; }
+  .main { display: block; }
+  .invoice-sheet {
+    width: 186mm; max-width: none; min-height: var(--invoice-page-height, 272mm);
+    padding: 8mm; margin: 0; border: 0; border-radius: 0;
+    print-color-adjust: exact; -webkit-print-color-adjust: exact;
+  }
+  .inv-header-row { flex-wrap: nowrap; align-items: flex-start; }
+  .inv-client-line { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .inv-meta { max-width: 48%; overflow-wrap: anywhere; }
+  .inv-table tr, .inv-debit-dates { break-inside: avoid; }
+  .inv-note-input { color: #111; }
+}
+
+.invoice-measure-print .inv-header-row { flex-wrap: nowrap; align-items: flex-start; }
+.invoice-measure-print .inv-client-line { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.invoice-measure-print .inv-meta { max-width: 48%; overflow-wrap: anywhere; }
+
+.inv-note-print { display: none; white-space: pre-wrap; }
+.invoice-measure-print .inv-note-print { display: inline; }
+@media print { .inv-note-print { display: inline; } }
