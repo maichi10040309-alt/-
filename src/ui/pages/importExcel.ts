@@ -6,6 +6,7 @@ import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { currentYearMonth, formatYmJapanese, isValidYearMonth } from '@/utils/date';
 import type { ImportedClient, ImportResult } from '@/utils/excelImport';
+import { refreshInvoiceMonth } from '@/utils/billing';
 import { clientMatchKey, parseCareExcelWorkbook, readFileAsArrayBuffer } from '@/utils/excelImport';
 
 function lineUnitPrice(line: ImportedClient['lines'][number], copayRatio: CopayRatio): number {
@@ -35,7 +36,7 @@ export function openImportModal() {
     `
     <p style="color:#64748b;font-size:13px;line-height:1.6;margin:0 0 16px">
       毎月の「保険(在宅)」「自費(在宅)」シートを含むExcel(.xlsx / .xlsm)を選ぶと、利用者と当月の利用状況を
-      まとめて取り込めます。ファイルはこの端末のブラウザ内だけで読み込まれ、外部には送信されません。
+      まとめて取り込めます。同じ利用者のExcel項目と対象月の実績は空欄・0円も含めて上書きし、発行済み請求書にも反映します。ファイルはこの端末のブラウザ内だけで読み込まれ、外部には送信されません。
     </p>
     <div class="form-grid">
       <div class="form-field">
@@ -151,7 +152,7 @@ export function openImportModal() {
     }
     const targetMonth = monthInput.value;
     const ok = await showConfirm(
-      `${parsed.clients.length}名の利用者について、${formatYmJapanese(targetMonth)}分の利用状況を取り込みます。よろしいですか?\n(既に入力済みの場合は上書きされます)`
+      `${parsed.clients.length}名の利用者について、${formatYmJapanese(targetMonth)}分の利用状況を取り込みます。よろしいですか?\n(利用者情報と対象月の実績を上書きし、発行済みを含む請求書の明細・合計も自動更新します)`
     );
     if (!ok) return;
     commitBtn.disabled = true;
@@ -218,6 +219,14 @@ async function commitImport(
   async function importOne(imported: ImportedClient): Promise<boolean> {
     const key = clientMatchKey(imported.name, imported.kana);
     let clientId = existingKeyToId.get(key);
+    // フリガナが修正された場合も、氏名が一意なら同じ利用者として更新する。
+    if (!clientId) {
+      const matches = state.clients.filter((client) =>
+        clientMatchKey(client.name, '') === clientMatchKey(imported.name, '')
+      );
+      if (matches.length === 1) clientId = matches[0].id;
+      else if (matches.length > 1) return false;
+    }
     let clientOk: boolean;
     if (clientId) {
       const existing = state.clients.find((c) => c.id === clientId)!;
@@ -225,10 +234,10 @@ async function commitImport(
         ...existing,
         name: imported.name,
         kana: imported.kana,
-        careLevel: imported.careLevel || existing.careLevel,
+        careLevel: imported.careLevel,
         copayRatio: imported.copayRatio,
-        careOfficeName: imported.careOfficeName || existing.careOfficeName,
-        careManagerName: imported.careManagerName || existing.careManagerName,
+        careOfficeName: imported.careOfficeName,
+        careManagerName: imported.careManagerName,
       };
       clientOk = await store.upsertClient(updated);
     } else {
@@ -252,6 +261,8 @@ async function commitImport(
       existingKeyToId.set(key, clientId);
     }
 
+    if (!clientOk) return false;
+
     const entries: UsageEntry[] = imported.lines.map((line) => {
       const itemId = itemNameToId.get(line.itemName)!;
       const unitPrice = lineUnitPrice(line, imported.copayRatio);
@@ -271,7 +282,17 @@ async function commitImport(
     });
 
     const usageOk = await store.setUsageEntriesForMonth(clientId, targetMonth, entries);
-    return clientOk && usageOk;
+    if (!usageOk) return false;
+    // 保存済みの請求書の対象月だけを更新。他月や月遅れ調整、入金情報は維持する。
+    const current = store.getState();
+    const invoices = current.invoices.filter((invoice) =>
+      invoice.clientId === clientId &&
+      targetMonth >= invoice.cycleStartMonth && targetMonth <= invoice.cycleEndMonth
+    );
+    for (const invoice of invoices) {
+      if (!(await store.saveInvoice(refreshInvoiceMonth(invoice, targetMonth, entries, current.items)))) return false;
+    }
+    return true;
   }
 
   async function importAll(clients: ImportedClient[]): Promise<ImportedClient[]> {

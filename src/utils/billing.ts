@@ -170,3 +170,34 @@ export function buildInvoiceMonths(
     taxableTotal: monthsTaxable + adjustmentsTaxable,
   };
 }
+
+/** 再取り込みした月だけを差し替え、請求書の識別情報・備考・調整を維持する。 */
+export function refreshInvoiceMonth(
+  invoice: Invoice, yearMonth: YearMonth, entries: UsageEntry[], items: RentalItem[]
+): Invoice {
+  const categories = new Map(items.map((item) => [item.id, item.billingType]));
+  const lines = entries.filter((entry) =>
+    entry.clientId === invoice.clientId && entry.yearMonth === yearMonth &&
+    (invoice.billingCategory === 'combined' ||
+      (categories.get(entry.itemId) ?? 'insurance') === invoice.billingCategory)
+  ).map(({ itemName, quantity, unitPrice, amount, taxCategory }) =>
+    ({ itemName, quantity, unitPrice, amount, taxCategory }));
+  const sum = (tax?: string) => lines.filter((line) => !tax || line.taxCategory === tax)
+    .reduce((total, line) => total + line.amount, 0);
+  const replacement = {
+    yearMonth, lines, subtotal: sum(), nonTaxableSubtotal: sum('nontaxable'),
+    taxableSubtotal: sum('taxable'),
+    note: invoice.months.find((month) => month.yearMonth === yearMonth)?.note ?? '',
+  };
+  const months = invoice.months.some((month) => month.yearMonth === yearMonth)
+    ? invoice.months.map((month) => month.yearMonth === yearMonth ? replacement : month)
+    : [...invoice.months, replacement].sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+  const adjustmentTotal = (tax?: string) => invoice.adjustments
+    .filter((line) => !tax || line.taxCategory === tax).reduce((total, line) => total + line.amount, 0);
+  return {
+    ...invoice, months,
+    totalAmount: months.reduce((total, month) => total + month.subtotal, 0) + adjustmentTotal(),
+    nonTaxableTotal: months.reduce((total, month) => total + month.nonTaxableSubtotal, 0) + adjustmentTotal('nontaxable'),
+    taxableTotal: months.reduce((total, month) => total + month.taxableSubtotal, 0) + adjustmentTotal('taxable'),
+  };
+}

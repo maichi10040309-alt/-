@@ -192,7 +192,6 @@ export function parseCareExcelWorkbook(buffer: ArrayBuffer): ImportResult {
         if (yen === 0) continue;
         lines.push({ itemName: code, billingType: 'private', quantity: 1, unitPrice: yen, taxCategory: 'nontaxable' });
       }
-      if (lines.length === 0) continue;
       applyTaxCategories(lines, (l) => l.unitPrice, taxableYen, name, '自費品目', warnings);
 
       const key = clientMatchKey(name, kana);
@@ -215,7 +214,7 @@ export function parseCareExcelWorkbook(buffer: ArrayBuffer): ImportResult {
     warnings.push('「自費(在宅)」シートが見つかりませんでした。自費品目は取り込まれません。');
   }
 
-  const clients = [...clientsByKey.values()].filter((c) => c.lines.length > 0);
+  const clients = [...clientsByKey.values()];
   if (clients.length === 0) {
     warnings.push('取り込めるデータが見つかりませんでした。シート構成が想定と異なる可能性があります。');
   }
