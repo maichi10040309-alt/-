@@ -1,3 +1,4 @@
+import { isEarlyInvoice, invoiceIssueDate, invoiceDisplayMonths } from '@/utils/invoiceSchedule';
 import { invoiceDebitDates } from '@/utils/debitDate';
 import { fitInvoiceForPrint } from '@/utils/invoicePrint';
 import { store, newId } from '@/store';
@@ -351,7 +352,8 @@ export function renderInvoicesPage(root: HTMLElement) {
     cycleStartMonth: string,
     farReference: string,
     category: BillingType,
-    navigateAfter = true
+    navigateAfter = true,
+    billingTiming: 'regular' | 'early' = 'regular'
   ): Invoice | null {
     const client = clients.find((c) => c.id === clientId);
     if (!client) return null;
@@ -378,7 +380,8 @@ export function renderInvoicesPage(root: HTMLElement) {
       taxableTotal,
       billingCategory: category,
       status: 'draft',
-      issuedDate: null,
+      billingTiming,
+      issuedDate: billingTiming === 'early' ? todayIso() : `${addMonths(cycle.cycleEndMonth, 1)}-10`,
       paidDate: null,
       createdAt: new Date().toISOString(),
     };
@@ -489,7 +492,7 @@ export function renderInvoicesPage(root: HTMLElement) {
     const cycleStartMonth = btn.dataset.cycle!;
     const category = btn.dataset.category as BillingType;
     if (!(await showConfirm(`${BILLING_TYPE_LABELS[category]}分の請求書をこの期間で作成します。よろしいですか?`))) return;
-    createInvoiceForCycle(earlyClientSelect.value, cycleStartMonth, todayMonth, category);
+    createInvoiceForCycle(earlyClientSelect.value, cycleStartMonth, todayMonth, category, true, 'early');
   });
 
   root.querySelector('#invoice-rows')?.addEventListener('click', (e) => {
@@ -677,7 +680,7 @@ function invoiceRowHtml(inv: Invoice): string {
   const client = store.getState().clients.find((c) => c.id === inv.clientId);
   const statusBadge =
     inv.status === 'issued'
-      ? `<span class="badge badge-success">発行済み(${inv.issuedDate ? formatDateJapanese(inv.issuedDate) : ''})</span>`
+      ? `<span class="badge badge-success">発行済み(${formatDateJapanese(invoiceIssueDate(inv))})</span>`
       : `<span class="badge badge-warning">下書き</span>`;
   const paidBadge = inv.paidDate
     ? `<span class="badge badge-success">入金済み(${formatDateJapanese(inv.paidDate)})</span>`
@@ -708,12 +711,15 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   const client = store.getState().clients.find((c) => c.id === invoice.clientId);
   const company = store.getState().company;
 
+  const early = isEarlyInvoice(invoice);
+  const displayMonths = invoiceDisplayMonths(invoice);
+  const issueDate = invoiceIssueDate(invoice);
   const debitDates = invoiceDebitDates(invoice);
-  const issueDateLabel = invoice.issuedDate ? formatDateJapanese(invoice.issuedDate) : formatDateJapanese(todayIso());
+  const issueDateLabel = formatDateJapanese(issueDate);
   // 負担割合は介護保険分の請求書のみ意味を持つ(自費分は自己負担割合の概念がないため表示しない)
   const ratioLabel = client && invoice.billingCategory !== 'private' ? COMPACT_COPAY_LABELS[client.copayRatio] : '';
 
-  const monthRows = invoice.months.map((m, idx) => monthRowHtml(m, idx, ratioLabel)).join('');
+  const monthRows = displayMonths.map((m, idx) => monthRowHtml(m, idx, ratioLabel)).join('');
   const adjustmentRows = invoice.adjustments.map(adjustmentRowHtmlForTable).join('');
 
   root.innerHTML = `
@@ -731,6 +737,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
           ? `<button class="btn btn-primary" id="btn-issue">発行済みにする</button>`
           : ''
       }
+      ${early ? `<label style="align-self:center">発行日 <input type="date" id="f-issued-date" value="${issueDate}" required /></label>` : ''}
       <button class="btn" id="btn-print">🖨 印刷</button>
     </div>
     <p class="no-print" style="color:var(--color-text-muted);font-size:12px;margin:-10px 0 16px;text-align:right">
@@ -780,10 +787,10 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
         </tbody>
       </table>
 
-      <div class="inv-debit-dates">
+      ${early ? '' : `<div class="inv-debit-dates">
         <div><span>引落日</span><strong>${formatDateJapanese(debitDates.current)}</strong></div>
         <div><span>次回引落日</span><strong>${formatDateJapanese(debitDates.next)}</strong></div>
-      </div>
+      </div>`}
       <p class="inv-footer">ご不明な点等ございましたら、ご連絡頂きますようお願い致します。</p>
 
       ${
@@ -800,6 +807,18 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
     </div>
   `;
 
+  root.querySelector('#f-issued-date')?.addEventListener('change', async (event) => {
+    const input = event.target as HTMLInputElement;
+    if (!input.value || !input.checkValidity()) {
+      input.value = issueDate;
+      await showAlert('発行日を選択してください。');
+      return;
+    }
+    const current = store.getState().invoices.find((entry) => entry.id === invoiceId);
+    if (!current) return;
+    const saved = await store.saveInvoice({ ...current, billingTiming: 'early', issuedDate: input.value });
+    if (!saved) await showAlert('発行日の保存に失敗しました。再度お試しください。');
+  });
   root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
   root.querySelector('#btn-print')?.addEventListener('click', () => { fitInvoiceForPrint(); window.print(); });
   root.querySelector('#btn-issue')?.addEventListener('click', async () => {
@@ -809,7 +828,8 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       ...invoice,
       invoiceNo,
       status: 'issued',
-      issuedDate: todayIso(),
+      billingTiming: early ? 'early' : 'regular',
+      issuedDate: invoiceIssueDate(store.getState().invoices.find((entry) => entry.id === invoiceId) ?? invoice),
     });
   });
   root.querySelector('#btn-paid')?.addEventListener('click', async () => {
@@ -823,18 +843,17 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
 
   root.querySelectorAll('.js-month-note').forEach((el) =>
     el.addEventListener('change', (e) => {
-      const idx = Number((e.target as HTMLInputElement).dataset.index);
+      const yearMonth = (e.target as HTMLInputElement).dataset.month!;
       const value = (e.target as HTMLInputElement).value;
       const current = store.getState().invoices.find((i) => i.id === invoiceId);
       if (!current) return;
-      const months = current.months.map((m, i) => (i === idx ? { ...m, note: value } : m));
+      const months = invoiceDisplayMonths(current).map((month) => month.yearMonth === yearMonth ? { ...month, note: value } : month);
       store.saveInvoice({ ...current, months });
     })
   );
 }
 
 function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel: string): string {
-  if (month.lines.length === 0) return ''; // 利用実績のない月は行を出さない(途中解約等で4か月そろわない場合に対応)
   const { month: monthNumber } = parseYearMonth(month.yearMonth);
   return `
     <tr>
@@ -844,7 +863,7 @@ function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel:
       <td class="num">${formatYen(month.taxableSubtotal)}</td>
       <td class="num">${formatYen(month.subtotal)}</td>
       <td>
-        <input type="text" class="js-month-note inv-note-input no-print" data-index="${idx}" value="${escapeHtml(month.note)}" />
+        <input type="text" class="js-month-note inv-note-input no-print" data-month="${month.yearMonth}" value="${escapeHtml(month.note)}" />
         <span class="inv-note-print">${escapeHtml(month.note)}</span>
       </td>
     </tr>

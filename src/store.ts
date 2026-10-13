@@ -1,3 +1,4 @@
+import { isEarlyInvoice, invoiceDisplayMonths, invoiceIssueDate } from '@/utils/invoiceSchedule';
 import type {
   AppState,
   BillingType,
@@ -145,6 +146,7 @@ function invoiceFromDb(r: Record<string, unknown>): Invoice {
     cycleStartMonth: r.cycle_start_month as string,
     cycleEndMonth: r.cycle_end_month as string,
     months: (r.months as Invoice['months']) ?? [],
+    billingTiming: (r.months as Invoice['months'] | null)?.find((month) => month.billingTiming)?.billingTiming,
     adjustments: (r.adjustments as Invoice['adjustments']) ?? [],
     totalAmount: Number(r.total_amount),
     nonTaxableTotal: Number(r.non_taxable_total),
@@ -163,14 +165,14 @@ function invoiceToDb(i: Invoice) {
     client_id: i.clientId,
     cycle_start_month: i.cycleStartMonth,
     cycle_end_month: i.cycleEndMonth,
-    months: i.months,
+    months: invoiceDisplayMonths(i).map((month, index) => ({ ...month, billingTiming: index === 0 ? (isEarlyInvoice(i) ? 'early' : 'regular') : undefined })),
     adjustments: i.adjustments,
     total_amount: i.totalAmount,
     non_taxable_total: i.nonTaxableTotal,
     taxable_total: i.taxableTotal,
     billing_category: i.billingCategory,
     status: i.status,
-    issued_date: i.issuedDate,
+    issued_date: invoiceIssueDate(i),
     paid_date: i.paidDate,
     created_at: i.createdAt,
   };

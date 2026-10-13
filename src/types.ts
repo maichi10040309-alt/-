@@ -109,6 +109,8 @@ export interface InvoiceMonthLine {
 }
 
 export interface InvoiceMonth {
+  // 請求種別は既存のmonths JSONにも保存し、DBの列追加なしで保持する。
+  billingTiming?: 'regular' | 'early';
   yearMonth: YearMonth;
   lines: InvoiceMonthLine[];
   subtotal: number;
@@ -128,6 +130,7 @@ export interface InvoiceAdjustmentLine {
 }
 
 export interface Invoice {
+  billingTiming?: 'regular' | 'early';
   id: string;
   invoiceNo: string; // 請求書番号
   clientId: string;

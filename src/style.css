@@ -762,3 +762,6 @@ table.data-table {
 .inv-note-print { display: none; white-space: pre-wrap; }
 .invoice-measure-print .inv-note-print { display: inline; }
 @media print { .inv-note-print { display: inline; } }
+
+.invoice-sheet > .inv-footer { margin-top: auto; padding-top: 6mm; }
+.invoice-sheet > .inv-debit-dates + .inv-footer { margin-top: 6mm; padding-top: 0; }
