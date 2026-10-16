@@ -124,6 +124,7 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
             </tr>
           </thead>
           <tbody id="list-rows"></tbody>
+          <tfoot id="list-totals"></tfoot>
         </table>
       </div>
     </div>
@@ -167,6 +168,9 @@ function renderListRows(
   let nonTaxableGrandTotal = 0;
   let taxableGrandTotal = 0;
   let enteredCount = 0;
+  let insuranceItemCount = 0;
+  let privateItemCount = 0;
+  const monthlyTotals = months.map(() => 0);
 
   const rows = clients.map((c) => {
     const entries = usageEntries.filter((u) => u.clientId === c.id && months.includes(u.yearMonth));
@@ -179,6 +183,11 @@ function renderListRows(
       .reduce((sum, e) => sum + e.amount, 0);
     const taxableTotal = entries.filter((e) => e.taxCategory === 'taxable').reduce((sum, e) => sum + e.amount, 0);
     const total = insuranceTotal + privateTotal;
+    insuranceItemCount += insuranceEntries.length;
+    privateItemCount += privateEntries.length;
+    months.forEach((month, index) => {
+      monthlyTotals[index] += entries.filter((entry) => entry.yearMonth === month).reduce((sum, entry) => sum + entry.amount, 0);
+    });
     grandTotal += total;
     insuranceGrandTotal += insuranceTotal;
     privateGrandTotal += privateTotal;
@@ -215,6 +224,21 @@ function renderListRows(
   });
 
   tbody.innerHTML = rows.join('');
+  const totals = document.querySelector('#list-totals');
+  if (totals) {
+    totals.innerHTML = `<tr style="font-weight:700;background:#eef2ff;border-top:2px solid #94a3b8">
+      <th colspan="3" scope="row">全員の合計（${clients.length}名）</th>
+      <td class="num">${insuranceItemCount}</td>
+      <td class="num">${formatYen(insuranceGrandTotal)}</td>
+      <td class="num">${privateItemCount}</td>
+      <td class="num">${formatYen(privateGrandTotal)}</td>
+      <td class="num">${formatYen(nonTaxableGrandTotal)}</td>
+      <td class="num">${formatYen(taxableGrandTotal)}</td>
+      ${listMonthCount === 4 ? monthlyTotals.map((amount) => `<td class="num">${formatYen(amount)}</td>`).join('') : ''}
+      <td class="num">${formatYen(grandTotal)}</td>
+      <td></td>
+    </tr>`;
+  }
 
   const summary = document.querySelector('#list-summary');
   if (summary) {
