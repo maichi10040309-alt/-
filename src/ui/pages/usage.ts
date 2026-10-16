@@ -21,6 +21,7 @@ type Mode = 'input' | 'list';
 let mode: Mode = 'input';
 let selectedClientId = '';
 let selectedMonth = currentYearMonth();
+let listMonthCount: 1 | 4 = 1;
 let draftRows: DraftRow[] = [];
 let currentRoot: HTMLElement | null = null;
 
@@ -66,8 +67,9 @@ export function renderUsagePage(root: HTMLElement) {
   }
 }
 
-function editClient(clientId: string) {
+function editClient(clientId: string, month = selectedMonth) {
   selectedClientId = clientId;
+  selectedMonth = month;
   mode = 'input';
   if (currentRoot) renderUsagePage(currentRoot);
 }
@@ -84,10 +86,17 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
 
   section.innerHTML = `
     <div class="card">
-      <div class="form-grid" style="margin-bottom:16px;grid-template-columns:200px">
+      <div class="form-grid" style="margin-bottom:16px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
         <div class="form-field">
-          <label>対象月</label>
+          <label for="f-list-month">${listMonthCount === 4 ? '開始月（この月から4か月）' : '対象月'}</label>
           <input type="month" id="f-list-month" value="${selectedMonth}" />
+        </div>
+        <div class="form-field">
+          <label for="f-list-period">表示期間</label>
+          <select id="f-list-period">
+            <option value="1" ${listMonthCount === 1 ? 'selected' : ''}>1か月</option>
+            <option value="4" ${listMonthCount === 4 ? 'selected' : ''}>4か月まとめて</option>
+          </select>
         </div>
       </div>
       <p id="list-summary" style="font-size:13px;margin:0 0 10px"></p>
@@ -101,7 +110,8 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
               <th colspan="2" style="text-align:center">介護保険品目</th>
               <th colspan="2" style="text-align:center">自費品目</th>
               <th colspan="2" style="text-align:center">税区分</th>
-              <th rowspan="2" class="num" style="vertical-align:bottom">合計金額</th>
+              ${listMonthCount === 4 ? Array.from({ length: 4 }, (_, i) => `<th rowspan="2" class="num" style="vertical-align:bottom">${formatYmJapanese(addMonths(selectedMonth, i))}</th>`).join('') : ''}
+              <th rowspan="2" class="num" style="vertical-align:bottom">${listMonthCount === 4 ? '4か月合計' : '合計金額'}</th>
               <th rowspan="2"></th>
             </tr>
             <tr>
@@ -122,7 +132,11 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
   section.querySelector('#f-list-month')?.addEventListener('change', (e) => {
     const v = (e.target as HTMLInputElement).value;
     if (v) selectedMonth = v;
-    renderListRows(clients, usageEntries);
+    renderListSection(section, clients);
+  });
+  section.querySelector('#f-list-period')?.addEventListener('change', (e) => {
+    listMonthCount = (e.target as HTMLSelectElement).value === '4' ? 4 : 1;
+    renderListSection(section, clients);
   });
 
   renderListRows(clients, usageEntries);
@@ -135,8 +149,12 @@ function renderListRows(
   const tbody = document.querySelector('#list-rows');
   if (!tbody) return;
 
+  const months = Array.from({ length: listMonthCount }, (_, i) => addMonths(selectedMonth, i));
+  const periodLabel = listMonthCount === 4
+    ? `${formatYmJapanese(months[0])}〜${formatYmJapanese(months[3])}`
+    : formatYmJapanese(selectedMonth);
   if (clients.length === 0) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="11">利用者が登録されていません。</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="${listMonthCount === 4 ? 15 : 11}">利用者が登録されていません。</td></tr>`;
     return;
   }
 
@@ -151,7 +169,7 @@ function renderListRows(
   let enteredCount = 0;
 
   const rows = clients.map((c) => {
-    const entries = usageEntries.filter((u) => u.clientId === c.id && u.yearMonth === selectedMonth);
+    const entries = usageEntries.filter((u) => u.clientId === c.id && months.includes(u.yearMonth));
     const insuranceEntries = entries.filter((e) => billingTypeOf(e.itemId) === 'insurance');
     const privateEntries = entries.filter((e) => billingTypeOf(e.itemId) === 'private');
     const insuranceTotal = insuranceEntries.reduce((sum, e) => sum + e.amount, 0);
@@ -166,21 +184,30 @@ function renderListRows(
     privateGrandTotal += privateTotal;
     nonTaxableGrandTotal += nonTaxableTotal;
     taxableGrandTotal += taxableTotal;
-    if (entries.length > 0) enteredCount++;
+    const enteredMonths = months.filter((month) => entries.some((entry) => entry.yearMonth === month)).length;
+    if (enteredMonths === listMonthCount) enteredCount++;
+    const statusLabel = listMonthCount === 4 && enteredMonths > 0 && enteredMonths < 4
+      ? `<span class="badge badge-warning">${enteredMonths}/4か月入力</span>`
+      : entries.length > 0 ? '<span class="badge badge-success">入力済み</span>' : '<span class="badge badge-warning">未入力</span>';
     return `
       <tr>
         <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
         <td>${clientStatusBadge(c.status)}</td>
-        <td>${entries.length > 0 ? '<span class="badge badge-success">入力済み</span>' : '<span class="badge badge-warning">未入力</span>'}</td>
+        <td>${statusLabel}</td>
         <td class="num">${insuranceEntries.length}</td>
         <td class="num">${formatYen(insuranceTotal)}</td>
         <td class="num">${privateEntries.length}</td>
         <td class="num">${formatYen(privateTotal)}</td>
         <td class="num">${formatYen(nonTaxableTotal)}</td>
         <td class="num">${formatYen(taxableTotal)}</td>
+        ${listMonthCount === 4 ? months.map((month) => {
+          const monthEntries = entries.filter((entry) => entry.yearMonth === month);
+          const amount = monthEntries.reduce((sum, entry) => sum + entry.amount, 0);
+          return `<td class="num">${formatYen(amount)}<div style="font-size:12px">${monthEntries.length ? '入力済み' : '未入力'}</div><button class="btn-link js-edit-client" data-id="${c.id}" data-month="${month}">入力へ</button></td>`;
+        }).join('') : ''}
         <td class="num">${formatYen(total)}</td>
         <td class="actions-cell">
-          <button class="btn-link js-edit-client" data-id="${c.id}">入力へ</button>
+          ${listMonthCount === 1 ? `<button class="btn-link js-edit-client" data-id="${c.id}">入力へ</button>` : ''}
           <button class="btn-link js-view-client" data-id="${c.id}">利用者マスタへ</button>
         </td>
       </tr>
@@ -191,7 +218,7 @@ function renderListRows(
 
   const summary = document.querySelector('#list-summary');
   if (summary) {
-    summary.innerHTML = `${formatYmJapanese(selectedMonth)}: <strong>${enteredCount} / ${clients.length}名</strong> 入力済み、
+    summary.innerHTML = `${periodLabel}: <strong>${enteredCount} / ${clients.length}名</strong> ${listMonthCount === 4 ? '4か月すべて入力済み' : '入力済み'}、
       合計 <strong>${formatYen(grandTotal)}</strong>
       (介護保険品目 ${formatYen(insuranceGrandTotal)} ／ 自費品目 ${formatYen(privateGrandTotal)} ／
       非課税 ${formatYen(nonTaxableGrandTotal)} ／ 課税 ${formatYen(taxableGrandTotal)})`;
@@ -200,7 +227,7 @@ function renderListRows(
   tbody.querySelectorAll('.js-edit-client').forEach((el) =>
     el.addEventListener('click', (e) => {
       const id = (e.target as HTMLElement).dataset.id;
-      if (id) editClient(id);
+      if (id) editClient(id, (e.currentTarget as HTMLElement).dataset.month ?? selectedMonth);
     })
   );
 
