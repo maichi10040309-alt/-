@@ -99,6 +99,9 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
           </select>
         </div>
       </div>
+      <div style="margin-bottom:12px">
+        <button class="btn btn-sm" id="btn-export-usage">表示中の${listMonthCount === 4 ? '4か月' : '1か月'}分をExcel出力</button>
+      </div>
       <p id="list-summary" style="font-size:13px;margin:0 0 10px"></p>
       <div class="table-scroll">
         <table class="data-table">
@@ -140,6 +143,38 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
     renderListSection(section, clients);
   });
 
+  section.querySelector('#btn-export-usage')?.addEventListener('click', async () => {
+    const button = section.querySelector('#btn-export-usage') as HTMLButtonElement;
+    button.disabled = true;
+    try {
+      const state = store.getState();
+      const sortedClients = [...state.clients].sort((a, b) => a.kana.localeCompare(b.kana, 'ja'));
+      const months = Array.from({ length: listMonthCount }, (_, i) => addMonths(selectedMonth, i));
+      const tables = buildUsageExportTables(sortedClients, state.usageEntries, state.items, months);
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.utils.book_new();
+      for (const { name, rows, moneyColumns } of tables) {
+        const sheet = XLSX.utils.aoa_to_sheet(rows);
+        sheet['!cols'] = rows[0].map((_, index) => ({ wch: index === 0 ? 22 : 18 }));
+        sheet['!autofilter'] = { ref: XLSX.utils.encode_range({ r: 0, c: 0 }, { r: rows.length - 2, c: rows[0].length - 1 }) };
+        for (let row = 1; row < rows.length; row++) {
+          for (const column of moneyColumns) {
+            const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })];
+            if (cell?.t === 'n') cell.z = '#,##0"円";[Red]-#,##0"円";0"円"';
+          }
+        }
+        XLSX.utils.book_append_sheet(workbook, sheet, name);
+      }
+      const period = months.length === 1 ? months[0] : `${months[0]}_${months[months.length - 1]}`;
+      XLSX.writeFile(workbook, `レンタル利用明細_${period}.xlsx`);
+    } catch (error) {
+      console.error('利用明細のExcel出力に失敗しました', error);
+      await showAlert('Excel出力に失敗しました。もう一度お試しください。');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   renderListRows(clients, usageEntries);
 }
 
@@ -156,6 +191,10 @@ function renderListRows(
     : formatYmJapanese(selectedMonth);
   if (clients.length === 0) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="${listMonthCount === 4 ? 15 : 11}">利用者が登録されていません。</td></tr>`;
+    const totals = document.querySelector('#list-totals');
+    if (totals) totals.innerHTML = '';
+    const summary = document.querySelector('#list-summary');
+    if (summary) summary.textContent = `${periodLabel}: 利用者が登録されていません。`;
     return;
   }
 
@@ -170,7 +209,7 @@ function renderListRows(
   let enteredCount = 0;
   let insuranceItemCount = 0;
   let privateItemCount = 0;
-  const monthlyTotals = months.map(() => 0);
+  const monthlyTotals = months.map(() => ({ insurance: 0, private: 0 }));
 
   const rows = clients.map((c) => {
     const entries = usageEntries.filter((u) => u.clientId === c.id && months.includes(u.yearMonth));
@@ -186,7 +225,9 @@ function renderListRows(
     insuranceItemCount += insuranceEntries.length;
     privateItemCount += privateEntries.length;
     months.forEach((month, index) => {
-      monthlyTotals[index] += entries.filter((entry) => entry.yearMonth === month).reduce((sum, entry) => sum + entry.amount, 0);
+      for (const entry of entries.filter((entry) => entry.yearMonth === month)) {
+        monthlyTotals[index][billingTypeOf(entry.itemId)] += entry.amount;
+      }
     });
     grandTotal += total;
     insuranceGrandTotal += insuranceTotal;
@@ -211,10 +252,11 @@ function renderListRows(
         <td class="num">${formatYen(taxableTotal)}</td>
         ${listMonthCount === 4 ? months.map((month) => {
           const monthEntries = entries.filter((entry) => entry.yearMonth === month);
-          const amount = monthEntries.reduce((sum, entry) => sum + entry.amount, 0);
-          return `<td class="num">${formatYen(amount)}<div style="font-size:12px">${monthEntries.length ? '入力済み' : '未入力'}</div><button class="btn-link js-edit-client" data-id="${c.id}" data-month="${month}">入力へ</button></td>`;
+          const insurance = monthEntries.filter((entry) => billingTypeOf(entry.itemId) === 'insurance').reduce((sum, entry) => sum + entry.amount, 0);
+          const privateAmount = monthEntries.filter((entry) => billingTypeOf(entry.itemId) === 'private').reduce((sum, entry) => sum + entry.amount, 0);
+          return `<td class="num">${renderSplitTotal(insurance, privateAmount)}<div style="font-size:12px">${monthEntries.length ? '入力済み' : '未入力'}</div><button class="btn-link js-edit-client" data-id="${c.id}" data-month="${month}">入力へ</button></td>`;
         }).join('') : ''}
-        <td class="num">${formatYen(total)}</td>
+        <td class="num">${renderSplitTotal(insuranceTotal, privateTotal)}</td>
         <td class="actions-cell">
           ${listMonthCount === 1 ? `<button class="btn-link js-edit-client" data-id="${c.id}">入力へ</button>` : ''}
           <button class="btn-link js-view-client" data-id="${c.id}">利用者マスタへ</button>
@@ -234,8 +276,8 @@ function renderListRows(
       <td class="num">${formatYen(privateGrandTotal)}</td>
       <td class="num">${formatYen(nonTaxableGrandTotal)}</td>
       <td class="num">${formatYen(taxableGrandTotal)}</td>
-      ${listMonthCount === 4 ? monthlyTotals.map((amount) => `<td class="num">${formatYen(amount)}</td>`).join('') : ''}
-      <td class="num">${formatYen(grandTotal)}</td>
+      ${listMonthCount === 4 ? monthlyTotals.map((amount) => `<td class="num">${renderSplitTotal(amount.insurance, amount.private)}</td>`).join('') : ''}
+      <td class="num">${renderSplitTotal(insuranceGrandTotal, privateGrandTotal)}</td>
       <td></td>
     </tr>`;
   }
@@ -261,6 +303,71 @@ function renderListRows(
       if (id) goToClientMaster(id);
     })
   );
+}
+
+
+function renderSplitTotal(insurance: number, privateAmount: number): string {
+  return `<div style="white-space:nowrap;font-size:12px">保険分 ${formatYen(insurance)}</div>
+    <div style="white-space:nowrap;font-size:12px">自費分 ${formatYen(privateAmount)}</div>
+    <div style="white-space:nowrap;font-weight:700">合計 ${formatYen(insurance + privateAmount)}</div>`;
+}
+
+/** 一覧と品目明細のExcel用データ。金額は一覧と同じ保存済みの自己負担額を使用する。 */
+export function buildUsageExportTables(
+  clients: ReturnType<typeof store.getState>['clients'],
+  usageEntries: ReturnType<typeof store.getState>['usageEntries'],
+  items: ReturnType<typeof store.getState>['items'],
+  months: string[]
+) {
+  type Cell = string | number;
+  const billingTypeOf = (id: string) => items.find((item) => item.id === id)?.billingType ?? 'insurance';
+  const summaryHeader = ['利用者名', 'フリガナ', '状態', ...months.flatMap((month) => [
+    `${month} 保険分（自己負担額）`, `${month} 自費分`, `${month} 合計`, `${month} 入力状況`,
+  ]), '期間合計 保険分（自己負担額）', '期間合計 自費分', '期間合計 合算', '非課税合計', '課税合計'];
+  const summaryRows: Cell[][] = [summaryHeader];
+  const detailRows: Cell[][] = [['利用者名', 'フリガナ', '状態', '対象月', '入力状況', '区分', '品目', '数量／単位数', '単価（円）', '金額（円）', '税区分', '備考']];
+  const summaryMoneyColumns = [
+    ...months.flatMap((_, index) => [3 + index * 4, 4 + index * 4, 5 + index * 4]),
+    ...Array.from({ length: 5 }, (_, index) => 3 + months.length * 4 + index),
+  ];
+  const summaryTotals = summaryHeader.map(() => 0);
+  let detailTotal = 0;
+  for (const client of clients) {
+    const entries = usageEntries.filter((entry) => entry.clientId === client.id && months.includes(entry.yearMonth));
+    const sum = (rows: UsageEntry[]) => rows.reduce((total, entry) => total + entry.amount, 0);
+    const insurance = sum(entries.filter((entry) => billingTypeOf(entry.itemId) === 'insurance'));
+    const privateAmount = sum(entries.filter((entry) => billingTypeOf(entry.itemId) === 'private'));
+    const row: Cell[] = [client.name, client.kana, CLIENT_STATUS_LABELS[client.status]];
+    for (const month of months) {
+      const monthly = entries.filter((entry) => entry.yearMonth === month);
+      row.push(sum(monthly.filter((entry) => billingTypeOf(entry.itemId) === 'insurance')),
+        sum(monthly.filter((entry) => billingTypeOf(entry.itemId) === 'private')),
+        sum(monthly), monthly.length ? '入力済み' : '未入力');
+      if (!monthly.length) {
+        detailRows.push([client.name, client.kana, CLIENT_STATUS_LABELS[client.status], month, '未入力', '', '', '', '', 0, '', '']);
+      }
+      for (const entry of monthly) {
+        detailRows.push([client.name, client.kana, CLIENT_STATUS_LABELS[client.status], month, '入力済み',
+          billingTypeOf(entry.itemId) === 'insurance' ? '保険分（自己負担額）' : '自費分', entry.itemName,
+          entry.quantity, entry.unitPrice, entry.amount, TAX_CATEGORY_LABELS[entry.taxCategory], entry.note]);
+        detailTotal += entry.amount;
+      }
+    }
+    row.push(insurance, privateAmount, insurance + privateAmount,
+      sum(entries.filter((entry) => entry.taxCategory === 'nontaxable')),
+      sum(entries.filter((entry) => entry.taxCategory === 'taxable')));
+    summaryMoneyColumns.forEach((column) => { summaryTotals[column] += Number(row[column]); });
+    summaryRows.push(row);
+  }
+  const totalRow: Cell[] = summaryHeader.map(() => '');
+  totalRow[0] = `全員の合計（${clients.length}名）`;
+  summaryMoneyColumns.forEach((column) => { totalRow[column] = summaryTotals[column]; });
+  summaryRows.push(totalRow);
+  detailRows.push(['全員の合計', '', '', '', '', '', '', '', '', detailTotal, '', '']);
+  return [
+    { name: '利用者別一覧', rows: summaryRows, moneyColumns: summaryMoneyColumns },
+    { name: '品目明細', rows: detailRows, moneyColumns: [8, 9] },
+  ];
 }
 
 // ==================== 入力タブ ====================
