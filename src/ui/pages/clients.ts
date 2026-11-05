@@ -225,7 +225,7 @@ function openCustomerNumberImport() {
       source = readCustomerNumbers(workbook, sheet.value);
       const result = matchCustomerNumbers(store.getState().clients, source);
       preview.innerHTML = `<p>登録対象 ${result.matches.length}人 ／ 登録済み ${result.unchanged}人 ／ 一致なし ${result.missing}人 ／ 要確認 ${result.conflicts.length}人</p>
-        ${result.conflicts.length ? `<p>番号・氏名が重複するか、既存の番号と異なるため対象外：${result.conflicts.map((client) => escapeHtml(client.name)).join('、')}</p>` : ''}`;
+        ${result.conflicts.length ? `<p>同姓同名、同じ氏名に複数の番号、または登録済み番号との不一致のため対象外：${result.conflicts.map((client) => escapeHtml(client.name)).join('、')}</p>` : ''}`;
       apply.disabled = !result.matches.length;
     } catch (error) {
       preview.textContent = error instanceof Error ? error.message : 'タブを読み込めませんでした。';
@@ -364,9 +364,8 @@ function openClientModal(existing?: Client) {
       return;
     }
     const customerNumber = (box.querySelector('#f-customer-number') as HTMLInputElement).value.normalize('NFKC').trim();
-    if (customerNumber && (!/^[0-9]+$/.test(customerNumber) ||
-        store.getState().clients.some((client) => client.id !== c.id && client.customerNumber === customerNumber))) {
-      await showAlert('顧客番号は、他の利用者に登録されていない数字を入力してください。');
+    if (customerNumber && !/^[0-9]+$/.test(customerNumber)) {
+      await showAlert('顧客番号は数字で入力してください。');
       return;
     }
     const updated: Client = {

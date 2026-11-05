@@ -466,8 +466,7 @@ class Store {
 
   setClientCustomerNumber(id: string, number: string): Promise<boolean> {
     const client = this.state.clients.find((entry) => entry.id === id);
-    if (!client || client.customerNumber || !/^[0-9]+$/.test(number) ||
-        this.state.clients.some((entry) => entry.customerNumber === number)) return Promise.resolve(false);
+    if (!client || client.customerNumber || !/^[0-9]+$/.test(number)) return Promise.resolve(false);
     return this.trackWrite((async () => {
       // 他の端末で備考や顧客番号が変わっていた場合は上書きしない。
       const saved = await this.runWrite(supabase.from('clients')
