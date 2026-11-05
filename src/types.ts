@@ -197,6 +197,7 @@ export interface CompanySettings {
   phone: string;
   fax: string;
   bankInfo: string; // 振込先情報
+  sealDataUrl?: string; // 請求書に印字する社印画像(PNG)
 }
 
 export interface AppState {

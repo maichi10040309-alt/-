@@ -1,3 +1,4 @@
+import { decodeCompanyExtras, encodeCompanyExtras } from '@/utils/companySeal';
 import { isEarlyInvoice, invoiceDisplayMonths, invoiceIssueDate } from '@/utils/invoiceSchedule';
 import type {
   AppState,
@@ -293,7 +294,7 @@ async function fetchAllFromSupabase(): Promise<AppState> {
         address: companyRow.address as string,
         phone: companyRow.phone as string,
         fax: companyRow.fax as string,
-        bankInfo: companyRow.bank_info as string,
+        ...decodeCompanyExtras(companyRow.bank_info),
       }
     : defaultCompany();
   const invoiceSeq = companyRow ? Number(companyRow.invoice_seq) : 1;
@@ -558,7 +559,7 @@ class Store {
             address: company.address,
             phone: company.phone,
             fax: company.fax,
-            bank_info: company.bankInfo,
+            bank_info: encodeCompanyExtras(company),
           })
           .eq('id', 1),
         'company update failed'

@@ -1,6 +1,7 @@
+import { isSealDataUrl } from '@/utils/companySeal';
 import { isEarlyInvoice, invoiceIssueDate, invoiceDisplayMonths } from '@/utils/invoiceSchedule';
 import { invoiceDebitDates } from '@/utils/debitDate';
-import { fitInvoiceForPrint } from '@/utils/invoicePrint';
+import { fitInvoiceForPrint, waitForInvoiceImages } from '@/utils/invoicePrint';
 import { store, newId } from '@/store';
 import type { BillingType, Client, CopayRatio, Invoice, LateAdjustment, TaxCategory } from '@/types';
 import { INVOICE_BILLING_CATEGORY_LABELS, TAX_CATEGORY_LABELS } from '@/types';
@@ -40,7 +41,7 @@ let issuingExistingDrafts = false;
 /** 以前の下書きも番号・発行日を保持しながら発行済みに移行する。 */
 async function issueExistingDrafts() {
   if (issuingExistingDrafts) return;
-  const drafts = store.getState().invoices.filter((invoice) => invoice.status === 'draft' && !attemptedDraftIds.has(invoice.id));
+  const drafts = store.getState().invoices.filter((invoice) => invoice.status === 'draft' && invoice.totalAmount !== 0 && !attemptedDraftIds.has(invoice.id));
   if (!drafts.length) return;
   issuingExistingDrafts = true;
   let failed = 0;
@@ -63,12 +64,15 @@ async function issueExistingDrafts() {
 type PrintInvoiceMode = 'all' | 'unpaid' | 'paid' | 'selected';
 
 function invoicesForPrinting(invoices: Invoice[], mode: PrintInvoiceMode): Invoice[] {
-  return invoices.filter((invoice) => invoice.status === 'issued' &&
+  return invoices.filter((invoice) => invoice.status === 'issued' && invoice.totalAmount !== 0 &&
     (mode === 'all' || (mode === 'paid' && !!invoice.paidDate) ||
       (mode === 'unpaid' && !invoice.paidDate) || (mode === 'selected' && selectedInvoiceIds.has(invoice.id))));
 }
 
-function printInvoiceBatch(invoices: Invoice[]) {
+let preparingBatchPrint = false;
+async function printInvoiceBatch(invoices: Invoice[]) {
+  if (preparingBatchPrint) return;
+  preparingBatchPrint = true;
   document.querySelector('#invoice-batch-print')?.remove();
   const container = document.createElement('div');
   container.id = 'invoice-batch-print';
@@ -77,20 +81,21 @@ function printInvoiceBatch(invoices: Invoice[]) {
   document.body.append(container);
   document.body.classList.add('invoice-batch-printing');
   try {
+    await waitForInvoiceImages(container);
     fitInvoiceForPrint();
     window.print();
   } catch (error) {
     container.remove();
     document.body.classList.remove('invoice-batch-printing');
     throw error;
-  }
+  } finally { preparingBatchPrint = false; }
 }
 
 /** そのサイクルの指定区分(保険/自費)に、請求すべき実績(利用実績 or 月遅れ調整)があるかどうか */
 function cycleCategoryHasData(cycle: BillingCycle, category: BillingType): boolean {
   const { usageEntries, lateAdjustments, items } = store.getState();
   const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments, items, category);
-  return preview.months.some((m) => m.lines.length > 0) || preview.adjustments.length > 0;
+  return preview.totalAmount !== 0 && (preview.months.some((m) => m.lines.length > 0) || preview.adjustments.length > 0);
 }
 
 function categoryInvoiceOf(cycle: BillingCycle, category: BillingType): Invoice | null {
@@ -125,6 +130,7 @@ function clientDueStatusLabel(
   if (stillPending) {
     return '上の「請求対象(未請求)」の「今回分」または「過去の未請求分」に表示されています。';
   }
+  if (!latest.insuranceInvoice && !latest.privateInvoice) return `${periodLabel}は請求額0円のため発行対象外です。`;
   return `${periodLabel}は請求済みです。`;
 }
 
@@ -433,6 +439,7 @@ export function renderInvoicesPage(root: HTMLElement) {
       items,
       category
     );
+    if (totalAmount === 0) return null;
     const invoice: Invoice = {
       id: newId(),
       invoiceNo: store.nextInvoiceNo(),
@@ -611,7 +618,7 @@ export function renderInvoicesPage(root: HTMLElement) {
         await showAlert('印刷対象の請求書がありません。');
         return;
       }
-      try { printInvoiceBatch(targets); }
+      try { await printInvoiceBatch(targets); }
       catch { await showAlert('印刷画面を開けませんでした。もう一度お試しください。'); }
     });
   }
@@ -794,8 +801,9 @@ function openAdjustmentModal(clients: Client[], existing?: LateAdjustment) {
 
 function invoiceRowHtml(inv: Invoice): string {
   const client = store.getState().clients.find((c) => c.id === inv.clientId);
-  const statusBadge =
-    inv.status === 'issued'
+  const statusBadge = inv.totalAmount === 0
+    ? '<span class="badge badge-muted">0円・発行対象外</span>'
+    : inv.status === 'issued'
       ? `<span class="badge badge-success">発行済み(${formatDateJapanese(invoiceIssueDate(inv))})</span>`
       : `<span class="badge badge-warning">発行処理中</span>`;
   const paidBadge = inv.paidDate
@@ -803,7 +811,7 @@ function invoiceRowHtml(inv: Invoice): string {
     : `<span class="badge badge-muted">未入金</span>`;
   return `
     <tr>
-      <td><input type="checkbox" class="js-invoice-check" data-id="${escapeHtml(inv.id)}" aria-label="${escapeHtml(client?.name ?? '削除済み利用者')}の${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]}請求書を選択" ${selectedInvoiceIds.has(inv.id) ? 'checked' : ''} ${inv.status !== 'issued' ? 'disabled' : ''} /></td>
+      <td><input type="checkbox" class="js-invoice-check" data-id="${escapeHtml(inv.id)}" aria-label="${escapeHtml(client?.name ?? '削除済み利用者')}の${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]}請求書を選択" ${selectedInvoiceIds.has(inv.id) ? 'checked' : ''} ${inv.status !== 'issued' || inv.totalAmount === 0 ? 'disabled' : ''} /></td>
       <td>${inv.invoiceNo ? escapeHtml(inv.invoiceNo) : '-'}</td>
       <td>${escapeHtml(client?.name ?? '(削除済み)')}</td>
       <td>${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]}</td>
@@ -841,7 +849,10 @@ function invoiceSheetHtml(invoice: Invoice): string {
         <div class="inv-meta">
           <div>発行日: ${issueDateLabel}</div>
           <div style="margin-top:8px">${escapeHtml(company.address)}</div>
-          <div class="inv-company-name">${escapeHtml(company.companyName)}</div>
+          <div class="inv-company-signature">
+            <div class="inv-company-name">${escapeHtml(company.companyName)}</div>
+            ${isSealDataUrl(company.sealDataUrl) ? `<img class="inv-company-seal" src="${company.sealDataUrl}" alt="社印" />` : ''}
+          </div>
         </div>
       </div>
 
@@ -921,7 +932,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
           : `<button class="btn btn-primary" id="btn-paid">入金済みにする</button>`
       }
       ${early ? `<label style="align-self:center">発行日 <input type="date" id="f-issued-date" value="${issueDate}" required /></label>` : ''}
-      <button class="btn" id="btn-print">🖨 印刷</button>
+      <button class="btn" id="btn-print" ${invoice.totalAmount === 0 ? 'disabled' : ''}>🖨 印刷</button>
     </div>
     <p class="no-print" style="color:var(--color-text-muted);font-size:12px;margin:-10px 0 16px;text-align:right">
       印刷ボタンで画面が変わらない場合は、キーボードの Ctrl+P(Macは⌘+P)をお試しください。
@@ -942,7 +953,14 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
     if (!saved) await showAlert('発行日の保存に失敗しました。再度お試しください。');
   });
   root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
-  root.querySelector('#btn-print')?.addEventListener('click', () => { fitInvoiceForPrint(); window.print(); });
+  root.querySelector('#btn-print')?.addEventListener('click', async () => {
+    if (invoice.totalAmount === 0) return;
+    try {
+      await waitForInvoiceImages(root);
+      fitInvoiceForPrint();
+      window.print();
+    } catch { await showAlert('社印画像を読み込めませんでした。設定を確認してもう一度印刷してください。'); }
+  });
   root.querySelector('#btn-paid')?.addEventListener('click', async () => {
     if (!(await showConfirm('この請求書を入金済みにします。よろしいですか?'))) return;
     store.saveInvoice({ ...invoice, paidDate: todayIso() });
