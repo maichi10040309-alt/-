@@ -38,7 +38,7 @@ export function openCompanySettingsModal() {
       <div class="form-field full">
         <label for="f-seal">請求書の社印</label>
         <input type="file" id="f-seal" accept="image/png,image/jpeg,image/webp" />
-        <p style="font-size:12px;color:var(--color-text-muted)">社印部分を切り抜いた画像を選択してください。背景が透明なPNGがおすすめです。5MBまで。会社名の横に最大25mm角で印字します。</p>
+        <p style="font-size:12px;color:var(--color-text-muted)">社印部分を切り抜いた画像を選択してください。背景が透明なPNGがおすすめです。5MBまで。住所・会社名の右側に2cm×2cmで印字します。</p>
         <div id="seal-preview" style="min-height:100px"></div>
         <button class="btn btn-sm" type="button" id="btn-remove-seal">社印を削除</button>
       </div>

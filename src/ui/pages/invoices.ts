@@ -848,9 +848,11 @@ function invoiceSheetHtml(invoice: Invoice): string {
         <div class="inv-client-line">${escapeHtml(client?.name ?? '')}<span class="inv-sama">様</span></div>
         <div class="inv-meta">
           <div>発行日: ${issueDateLabel}</div>
-          <div style="margin-top:8px">${escapeHtml(company.address)}</div>
           <div class="inv-company-signature">
-            <div class="inv-company-name">${escapeHtml(company.companyName)}</div>
+            <div class="inv-company-details">
+              <div>${escapeHtml(company.address)}</div>
+              <div class="inv-company-name">${escapeHtml(company.companyName)}</div>
+            </div>
             ${isSealDataUrl(company.sealDataUrl) ? `<img class="inv-company-seal" src="${company.sealDataUrl}" alt="社印" />` : ''}
           </div>
         </div>
