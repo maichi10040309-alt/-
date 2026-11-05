@@ -1,3 +1,4 @@
+import { matchCustomerNumbers, readCustomerNumbers } from '@/utils/customerNumbers';
 import { store, newId } from '@/store';
 import type { Client, ClientEvent, ClientEventType, ClientStatus, CopayRatio, Invoice, PaymentMethod } from '@/types';
 import {
@@ -72,12 +73,13 @@ function renderListSection(section: HTMLElement) {
   section.innerHTML = `
     <div class="toolbar">
       <div class="page-subtitle">利用者(ご契約者)の基本情報を登録します。請求は全利用者共通で3月・7月・11月に区切って発行されます。</div>
-      <button class="btn btn-primary" id="btn-add">＋ 利用者を追加</button>
+      <div class="toolbar-controls"><button class="btn" id="btn-customer-numbers">顧客番号を取り込む</button><button class="btn btn-primary" id="btn-add">＋ 利用者を追加</button></div>
     </div>
     <div class="card">
       <table class="data-table">
         <thead>
           <tr>
+            <th>顧客番号</th>
             <th>利用者名</th>
             <th>要介護度</th>
             <th>負担割合</th>
@@ -92,7 +94,7 @@ function renderListSection(section: HTMLElement) {
         <tbody id="client-rows">
           ${
             clients.length === 0
-              ? `<tr class="empty-row"><td colspan="9">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="10">利用者が登録されていません。「利用者を追加」から登録してください。</td></tr>`
               : clients.map((c) => rowHtml(c, invoices)).join('')
           }
         </tbody>
@@ -100,6 +102,7 @@ function renderListSection(section: HTMLElement) {
     </div>
   `;
 
+  section.querySelector('#btn-customer-numbers')?.addEventListener('click', openCustomerNumberImport);
   section.querySelector('#btn-add')?.addEventListener('click', () => openClientModal());
 
   section.querySelector('#client-rows')?.addEventListener('click', async (e) => {
@@ -159,6 +162,7 @@ export function clientStatusBadge(status: ClientStatus): string {
 function rowHtml(c: Client, invoices: Invoice[]): string {
   return `
     <tr>
+      <td>${escapeHtml(c.customerNumber || '—')}</td>
       <td>${escapeHtml(c.name)}<div style="color:#94a3b8;font-size:12px">${escapeHtml(c.kana)}</div></td>
       <td>${escapeHtml(c.careLevel)}</td>
       <td>${COPAY_RATIO_LABELS[c.copayRatio]}</td>
@@ -173,6 +177,55 @@ function rowHtml(c: Client, invoices: Invoice[]): string {
       </td>
     </tr>
   `;
+}
+
+function openCustomerNumberImport() {
+  const { box, close } = openModal('顧客番号を取り込む');
+  box.insertAdjacentHTML('beforeend', `
+    <p>セディナ引落し管理表（.xlsm / .xlsx）を選択してください。氏名が一意に一致する登録済み利用者にだけ顧客番号を設定します。</p>
+    <label>管理表 <input type="file" id="customer-number-file" accept=".xlsm,.xlsx" /></label>
+    <div id="customer-number-preview" aria-live="polite"></div>
+    <div class="form-actions"><button class="btn" id="customer-number-close">閉じる</button>
+      <button class="btn btn-primary" id="customer-number-apply" disabled>顧客番号を登録</button></div>`);
+  const input = box.querySelector<HTMLInputElement>('#customer-number-file')!;
+  const preview = box.querySelector<HTMLElement>('#customer-number-preview')!;
+  const apply = box.querySelector<HTMLButtonElement>('#customer-number-apply')!;
+  let source: ReturnType<typeof readCustomerNumbers> | undefined;
+  let revision = 0;
+  box.querySelector('#customer-number-close')?.addEventListener('click', close);
+  input.addEventListener('change', async () => {
+    const currentRevision = ++revision;
+    source = undefined;
+    apply.disabled = true;
+    preview.textContent = '';
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = readCustomerNumbers(await file.arrayBuffer());
+      if (revision !== currentRevision) return;
+      source = parsed;
+      const result = matchCustomerNumbers(store.getState().clients, source);
+      preview.innerHTML = `<p>登録対象 ${result.matches.length}人 ／ 登録済み ${result.unchanged}人 ／ 一致なし ${result.missing}人 ／ 要確認 ${result.conflicts.length}人</p>
+        ${result.conflicts.length ? `<p>番号・氏名が重複するか、既存の番号と異なるため対象外：${result.conflicts.map((client) => escapeHtml(client.name)).join('、')}</p>` : ''}`;
+      apply.disabled = !result.matches.length;
+    } catch (error) {
+      if (revision === currentRevision) preview.textContent = error instanceof Error ? error.message : '管理表を読み込めませんでした。';
+    }
+  });
+  apply.addEventListener('click', async () => {
+    if (!source) return;
+    const { matches } = matchCustomerNumbers(store.getState().clients, source);
+    apply.disabled = input.disabled = true;
+    let saved = 0;
+    const failed: string[] = [];
+    for (const { client, number } of matches) {
+      if (await store.setClientCustomerNumber(client.id, number)) saved++;
+      else failed.push(client.name);
+      preview.textContent = `登録中：${saved + failed.length} / ${matches.length}人`;
+    }
+    preview.textContent = `${saved}人の顧客番号を登録しました。${failed.length ? `登録できなかった利用者：${failed.join('、')}。再読み込み後にご確認ください。` : ''}`;
+    input.disabled = false;
+  });
 }
 
 function openClientModal(existing?: Client) {
@@ -199,6 +252,10 @@ function openClientModal(existing?: Client) {
     'beforeend',
     `
     <div class="form-grid">
+      <div class="form-field">
+        <label for="f-customer-number">顧客番号</label>
+        <input type="text" id="f-customer-number" inputmode="numeric" value="${escapeHtml(c.customerNumber ?? '')}" />
+      </div>
       <div class="form-field">
         <label>利用者名 *</label>
         <input type="text" id="f-name" value="${escapeHtml(c.name)}" />
@@ -287,8 +344,15 @@ function openClientModal(existing?: Client) {
       await showAlert('利用者名を入力してください。');
       return;
     }
+    const customerNumber = (box.querySelector('#f-customer-number') as HTMLInputElement).value.normalize('NFKC').trim();
+    if (customerNumber && (!/^[0-9]+$/.test(customerNumber) ||
+        store.getState().clients.some((client) => client.id !== c.id && client.customerNumber === customerNumber))) {
+      await showAlert('顧客番号は、他の利用者に登録されていない数字を入力してください。');
+      return;
+    }
     const updated: Client = {
       ...c,
+      customerNumber,
       name,
       kana: (box.querySelector('#f-kana') as HTMLInputElement).value.trim(),
       careLevel: (box.querySelector('#f-careLevel') as HTMLInputElement).value.trim(),

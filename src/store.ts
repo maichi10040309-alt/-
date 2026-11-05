@@ -52,6 +52,25 @@ function emptyState(): AppState {
 // ==================== DB(snake_case) <-> ドメイン型(camelCase)の変換 ====================
 // テーブル定義は supabase/schema.sql を参照。
 
+const CLIENT_NUMBER_PREFIX = 'rental-billing:customer-number:v1:';
+
+function clientNoteFields(raw: unknown): Pick<Client, 'note' | 'customerNumber'> {
+  const note = typeof raw === 'string' ? raw : '';
+  if (note.startsWith(CLIENT_NUMBER_PREFIX)) {
+    try {
+      const value = JSON.parse(note.slice(CLIENT_NUMBER_PREFIX.length));
+      if (typeof value.note === 'string' && typeof value.number === 'string' && /^[0-9]+$/.test(value.number)) {
+        return { note: value.note, customerNumber: value.number };
+      }
+    } catch { /* 旧来の備考は文字列として扱う */ }
+  }
+  return { note };
+}
+
+function encodeClientNote(note: string, number?: string): string {
+  return number ? CLIENT_NUMBER_PREFIX + JSON.stringify({ note, number }) : note;
+}
+
 function clientFromDb(r: Record<string, unknown>): Client {
   return {
     id: r.id as string,
@@ -66,7 +85,7 @@ function clientFromDb(r: Record<string, unknown>): Client {
     careManagerName: r.care_manager_name as string,
     salesRepName: r.sales_rep_name as string,
     status: r.status as ClientStatus,
-    note: r.note as string,
+    ...clientNoteFields(r.note),
   };
 }
 function clientToDb(c: Client) {
@@ -83,7 +102,7 @@ function clientToDb(c: Client) {
     care_manager_name: c.careManagerName,
     sales_rep_name: c.salesRepName,
     status: c.status,
-    note: c.note,
+    note: encodeClientNote(c.note, c.customerNumber),
   };
 }
 
@@ -443,6 +462,23 @@ class Store {
     return this.trackWrite(
       this.runWrite(supabase.from('clients').upsert(clientToDb(client)), 'client upsert failed')
     );
+  }
+
+  setClientCustomerNumber(id: string, number: string): Promise<boolean> {
+    const client = this.state.clients.find((entry) => entry.id === id);
+    if (!client || client.customerNumber || !/^[0-9]+$/.test(number) ||
+        this.state.clients.some((entry) => entry.customerNumber === number)) return Promise.resolve(false);
+    return this.trackWrite((async () => {
+      // 他の端末で備考や顧客番号が変わっていた場合は上書きしない。
+      const saved = await this.runWrite(supabase.from('clients')
+        .update({ note: encodeClientNote(client.note, number) })
+        .eq('id', id).eq('note', client.note).select('id').single(), 'customer number update failed');
+      if (saved) {
+        this.state.clients = this.state.clients.map((entry) => entry.id === id ? { ...entry, customerNumber: number } : entry);
+        this.notify();
+      }
+      return saved;
+    })());
   }
 
   deleteClient(id: string): Promise<boolean> {

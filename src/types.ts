@@ -38,6 +38,7 @@ export const CLIENT_STATUS_LABELS: Record<ClientStatus, string> = {
 
 export interface Client {
   id: string;
+  customerNumber?: string;
   name: string; // 利用者名
   kana: string; // フリガナ
   careLevel: string; // 要介護度(自由入力: 要支援1〜要介護5 など)
