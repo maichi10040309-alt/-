@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { CopayRatio, TaxCategory } from '@/types';
+import { copayYenPerUnit } from '@/types';
 
 export interface ImportedUsageLine {
   itemName: string;
@@ -7,6 +8,9 @@ export interface ImportedUsageLine {
   quantity: number; // 保険品目=単位数、自費品目=1
   unitPrice: number; // 保険品目=負担割合から自動算出前の円/単位(取り込み時点では負担割合ratioで再計算)、自費品目=金額そのもの
   taxCategory: TaxCategory;
+  // 限度額超過の追加負担など、通常の負担割合では計算できない行の単価。
+  unitPriceOverride?: number;
+  note?: string;
 }
 
 export interface ImportedClient {
@@ -212,6 +216,49 @@ export function parseCareExcelWorkbook(buffer: ArrayBuffer): ImportResult {
     }
   } else {
     warnings.push('「自費(在宅)」シートが見つかりませんでした。自費品目は取り込まれません。');
+  }
+
+  // 保険シートは実績単位数のみ。給付限度額超過分は「請求額」シートのJ/K列で
+  // 管理されている。通常の自己負担額は既に品目行に含むため、10円との差額だけ加算する。
+  // 超過対象の品目までは元Excelで特定されていないので、品目を推測して変更せず別行で保持する。
+  const claimSheetName = findSheet(wb, ['請求額(在宅)', '請求額（在宅）']);
+  if (claimSheetName && insuranceSheetName) {
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[claimSheetName], { header: 1, raw: true });
+    const handled = new Set<string>();
+    for (let r = 3; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row) continue;
+      const name = cellStr(row[2]);
+      if (!name) continue;
+      const key = clientMatchKey(name, cellStr(row[3]));
+      const matches = [...clientsByKey.values()].filter((client) => clientMatchKey(client.name, '') === clientMatchKey(name, ''));
+      const client = clientsByKey.get(key) ?? (matches.length === 1 ? matches[0] : undefined);
+      if (!client) continue;
+      const clientKey = clientMatchKey(client.name, client.kana);
+      const excess = [
+        { units: cellNum(row[9]), taxCategory: 'nontaxable' as const, label: '非課税' },
+        { units: cellNum(row[10]), taxCategory: 'taxable' as const, label: '課税' },
+      ];
+      if (!excess.some((entry) => entry.units > 0)) continue;
+      if (handled.has(clientKey)) {
+        throw new Error(`${name}: 請求額シートに超過単位数の行が重複しています。元Excelをご確認ください。`);
+      }
+      handled.add(clientKey);
+      if (client.copayRatio === 'seiho') continue; // 元Excelの利用者負担額の式と同じ扱い
+      for (const entry of excess) {
+        if (entry.units <= 0) continue;
+        const additionalAmount = entry.units * (10 - copayYenPerUnit(client.copayRatio));
+        client.lines.push({
+          itemName: `給付限度額超過分（${entry.label}・追加負担）`,
+          billingType: 'insurance', quantity: 1, unitPrice: additionalAmount,
+          unitPriceOverride: additionalAmount, taxCategory: entry.taxCategory,
+          note: `元Excel「${claimSheetName}」の${entry.label}超過${entry.units}単位。通常負担で計算済みのため差額のみ加算。`,
+        });
+        warnings.push(`${name}: 給付限度額超過分（${entry.label}）${additionalAmount.toLocaleString('ja-JP')}円を追加負担として反映しました。`);
+      }
+    }
+  } else if (insuranceSheetName) {
+    warnings.push('「請求額(在宅)」シートが見つからないため、給付限度額超過分の追加負担は取り込まれていません。超過がある場合は確認してください。');
   }
 
   const clients = [...clientsByKey.values()];

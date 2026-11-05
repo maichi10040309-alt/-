@@ -10,7 +10,7 @@ import { refreshInvoiceMonth } from '@/utils/billing';
 import { clientMatchKey, parseCareExcelWorkbook, readFileAsArrayBuffer } from '@/utils/excelImport';
 
 function lineUnitPrice(line: ImportedClient['lines'][number], copayRatio: CopayRatio): number {
-  return line.billingType === 'insurance' ? copayYenPerUnit(copayRatio) : line.unitPrice;
+  return line.unitPriceOverride ?? (line.billingType === 'insurance' ? copayYenPerUnit(copayRatio) : line.unitPrice);
 }
 
 function clientTotal(c: ImportedClient): number {
@@ -36,7 +36,7 @@ export function openImportModal() {
     `
     <p style="color:#64748b;font-size:13px;line-height:1.6;margin:0 0 16px">
       毎月の「保険(在宅)」「自費(在宅)」シートを含むExcel(.xlsx / .xlsm)を選ぶと、利用者と当月の利用状況を
-      まとめて取り込めます。同じ利用者のExcel項目と対象月の実績は空欄・0円も含めて上書きし、発行済み請求書にも反映します。ファイルはこの端末のブラウザ内だけで読み込まれ、外部には送信されません。
+      まとめて取り込めます。給付限度額の超過分は「請求額(在宅)」から読み取り、追加負担として別行で反映します。同じ利用者のExcel項目と対象月の実績は空欄・0円も含めて上書きし、発行済み請求書にも反映します。ファイルはこの端末のブラウザ内だけで読み込まれ、外部には送信されません。
     </p>
     <div class="form-grid">
       <div class="form-field">
@@ -276,7 +276,7 @@ async function commitImport(
         unitPrice,
         amount: line.quantity * unitPrice,
         taxCategory: line.taxCategory,
-        note: '',
+        note: line.note ?? '',
         enteredAt: new Date().toISOString(),
       };
     });

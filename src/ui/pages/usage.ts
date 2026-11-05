@@ -14,6 +14,7 @@ interface DraftRow {
   quantity: number;
   unitPrice: number;
   taxCategory: TaxCategory;
+  note?: string;
 }
 
 type Mode = 'input' | 'list';
@@ -489,6 +490,7 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
       quantity: e.quantity,
       unitPrice: e.unitPrice,
       taxCategory: e.taxCategory,
+      note: e.note,
     }));
     renderRows(items);
   });
@@ -507,7 +509,7 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
         unitPrice: r.unitPrice,
         amount: r.quantity * r.unitPrice,
         taxCategory: r.taxCategory,
-        note: '',
+        note: r.note ?? '',
         enteredAt: new Date().toISOString(),
       }));
     store.setUsageEntriesForMonth(selectedClientId, selectedMonth, entries);
@@ -530,6 +532,7 @@ function loadDraftFromStore() {
     quantity: e.quantity,
     unitPrice: e.unitPrice,
     taxCategory: e.taxCategory,
+    note: e.note,
   }));
 }
 
