@@ -5,29 +5,29 @@ export function normalizeCustomerName(name: string): string {
   return name.normalize('NFKC').replace(/\s/g, '');
 }
 
-export function readCustomerNumbers(bytes: ArrayBuffer) {
-  const workbook = XLSX.read(bytes, { type: 'array' });
+export function readCustomerNumberWorkbook(bytes: ArrayBuffer) {
+  return XLSX.read(bytes, { type: 'array' });
+}
+
+export function readCustomerNumbers(workbook: XLSX.WorkBook, sheetName: string) {
+  if (!workbook.SheetNames.includes(sheetName)) throw new Error('取り込むタブを選択してください。');
+  const rows = XLSX.utils.sheet_to_json<string[]>(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+  const header = rows.findIndex((row) => row.includes('顧客番号') && row.includes('名前'));
+  if (header < 0) throw new Error('選択したタブに「顧客番号」と「名前」の列がありません。');
+  const numberColumn = rows[header].indexOf('顧客番号');
+  const nameColumn = rows[header].indexOf('名前');
   const byName = new Map<string, Set<string>>();
   const byNumber = new Map<string, Set<string>>();
-  let sheetCount = 0;
-  for (const sheet of Object.values(workbook.Sheets)) {
-    const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, raw: false, defval: '' });
-    const header = rows.findIndex((row) => row.includes('顧客番号') && row.includes('名前'));
-    if (header < 0) continue;
-    sheetCount++;
-    const numberColumn = rows[header].indexOf('顧客番号');
-    const nameColumn = rows[header].indexOf('名前');
-    for (const row of rows.slice(header + 1)) {
-      const number = String(row[numberColumn] ?? '').normalize('NFKC').trim();
-      const name = normalizeCustomerName(String(row[nameColumn] ?? ''));
-      if (!/^[0-9]+$/.test(number) || !name) continue;
-      if (!byName.has(name)) byName.set(name, new Set());
-      if (!byNumber.has(number)) byNumber.set(number, new Set());
-      byName.get(name)!.add(number);
-      byNumber.get(number)!.add(name);
-    }
+  for (const row of rows.slice(header + 1)) {
+    const number = String(row[numberColumn] ?? '').normalize('NFKC').trim();
+    const name = normalizeCustomerName(String(row[nameColumn] ?? ''));
+    if (!/^[0-9]+$/.test(number) || !name) continue;
+    if (!byName.has(name)) byName.set(name, new Set());
+    if (!byNumber.has(number)) byNumber.set(number, new Set());
+    byName.get(name)!.add(number);
+    byNumber.get(number)!.add(name);
   }
-  if (!sheetCount || !byName.size) throw new Error('「顧客番号」「名前」があるシートを読み込めませんでした。');
+  if (!byName.size) throw new Error('選択したタブに登録できる顧客番号がありません。');
   return { byName, byNumber };
 }
 

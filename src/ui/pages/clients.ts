@@ -1,4 +1,4 @@
-import { matchCustomerNumbers, readCustomerNumbers } from '@/utils/customerNumbers';
+import { matchCustomerNumbers, readCustomerNumberWorkbook, readCustomerNumbers } from '@/utils/customerNumbers';
 import { store, newId } from '@/store';
 import type { Client, ClientEvent, ClientEventType, ClientStatus, CopayRatio, Invoice, PaymentMethod } from '@/types';
 import {
@@ -182,40 +182,59 @@ function rowHtml(c: Client, invoices: Invoice[]): string {
 function openCustomerNumberImport() {
   const { box, close } = openModal('顧客番号を取り込む');
   box.insertAdjacentHTML('beforeend', `
-    <p>セディナ引落し管理表（.xlsm / .xlsx）を選択してください。氏名が一意に一致する登録済み利用者にだけ顧客番号を設定します。</p>
+    <p>セディナ引落し管理表（.xlsm / .xlsx）と取り込むタブを1つ選択してください。選択したタブで氏名が一意に一致する利用者に顧客番号を設定します。</p>
     <label>管理表 <input type="file" id="customer-number-file" accept=".xlsm,.xlsx" /></label>
+    <div class="form-field"><label for="customer-number-sheet">取り込むタブ</label><select id="customer-number-sheet" disabled><option value="">タブを選択してください</option></select></div>
     <div id="customer-number-preview" aria-live="polite"></div>
     <div class="form-actions"><button class="btn" id="customer-number-close">閉じる</button>
       <button class="btn btn-primary" id="customer-number-apply" disabled>顧客番号を登録</button></div>`);
   const input = box.querySelector<HTMLInputElement>('#customer-number-file')!;
+  const sheet = box.querySelector<HTMLSelectElement>('#customer-number-sheet')!;
   const preview = box.querySelector<HTMLElement>('#customer-number-preview')!;
   const apply = box.querySelector<HTMLButtonElement>('#customer-number-apply')!;
+  let workbook: ReturnType<typeof readCustomerNumberWorkbook> | undefined;
   let source: ReturnType<typeof readCustomerNumbers> | undefined;
   let revision = 0;
   box.querySelector('#customer-number-close')?.addEventListener('click', close);
   input.addEventListener('change', async () => {
     const currentRevision = ++revision;
-    source = undefined;
+    workbook = source = undefined;
+    sheet.replaceChildren(new Option('タブを選択してください', ''));
+    sheet.disabled = true;
     apply.disabled = true;
     preview.textContent = '';
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const parsed = readCustomerNumbers(await file.arrayBuffer());
+      const parsed = readCustomerNumberWorkbook(await file.arrayBuffer());
       if (revision !== currentRevision) return;
-      source = parsed;
+      workbook = parsed;
+      for (const name of parsed.SheetNames) sheet.add(new Option(name, name));
+      sheet.disabled = !parsed.SheetNames.length;
+      preview.textContent = '取り込むタブを1つ選択してください。';
+    } catch {
+      if (revision === currentRevision) preview.textContent = '管理表を読み込めませんでした。';
+    }
+  });
+  sheet.addEventListener('change', () => {
+    source = undefined;
+    apply.disabled = true;
+    preview.textContent = '';
+    if (!workbook || !sheet.value) return;
+    try {
+      source = readCustomerNumbers(workbook, sheet.value);
       const result = matchCustomerNumbers(store.getState().clients, source);
       preview.innerHTML = `<p>登録対象 ${result.matches.length}人 ／ 登録済み ${result.unchanged}人 ／ 一致なし ${result.missing}人 ／ 要確認 ${result.conflicts.length}人</p>
         ${result.conflicts.length ? `<p>番号・氏名が重複するか、既存の番号と異なるため対象外：${result.conflicts.map((client) => escapeHtml(client.name)).join('、')}</p>` : ''}`;
       apply.disabled = !result.matches.length;
     } catch (error) {
-      if (revision === currentRevision) preview.textContent = error instanceof Error ? error.message : '管理表を読み込めませんでした。';
+      preview.textContent = error instanceof Error ? error.message : 'タブを読み込めませんでした。';
     }
   });
   apply.addEventListener('click', async () => {
     if (!source) return;
     const { matches } = matchCustomerNumbers(store.getState().clients, source);
-    apply.disabled = input.disabled = true;
+    apply.disabled = input.disabled = sheet.disabled = true;
     let saved = 0;
     const failed: string[] = [];
     for (const { client, number } of matches) {
@@ -224,7 +243,7 @@ function openCustomerNumberImport() {
       preview.textContent = `登録中：${saved + failed.length} / ${matches.length}人`;
     }
     preview.textContent = `${saved}人の顧客番号を登録しました。${failed.length ? `登録できなかった利用者：${failed.join('、')}。再読み込み後にご確認ください。` : ''}`;
-    input.disabled = false;
+    input.disabled = sheet.disabled = false;
   });
 }
 
