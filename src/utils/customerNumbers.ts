@@ -12,10 +12,10 @@ export function readCustomerNumberWorkbook(bytes: ArrayBuffer) {
 export function readCustomerNumbers(workbook: XLSX.WorkBook, sheetName: string) {
   if (!workbook.SheetNames.includes(sheetName)) throw new Error('取り込むタブを選択してください。');
   const rows = XLSX.utils.sheet_to_json<string[]>(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
-  const header = rows.findIndex((row) => row.includes('顧客番号') && row.includes('名前'));
-  if (header < 0) throw new Error('選択したタブに「顧客番号」と「名前」の列がありません。');
-  const numberColumn = rows[header].indexOf('顧客番号');
-  const nameColumn = rows[header].indexOf('名前');
+  const header = rows.findIndex((row) => row.includes('セディナ番号') && row.includes('利用者名'));
+  if (header < 0) throw new Error('選択したタブに「セディナ番号」と「利用者名」の列がありません。');
+  const numberColumn = rows[header].indexOf('セディナ番号');
+  const nameColumn = rows[header].indexOf('利用者名');
   const byName = new Map<string, Set<string>>();
   const byNumber = new Map<string, Set<string>>();
   for (const row of rows.slice(header + 1)) {
