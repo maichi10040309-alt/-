@@ -723,7 +723,7 @@ table.data-table {
 .inv-table th:nth-child(2) { width: 10%; }
 .inv-table th:nth-child(3), .inv-table th:nth-child(4) { width: 15%; }
 .inv-table th:nth-child(5) { width: 20%; }
-.inv-table th:last-child { width: 16%; }
+.inv-table th:last-child { width: 16%; text-align: center; }
 .inv-table th, .inv-table td { padding: 3mm 1.5mm; overflow-wrap: anywhere; }
 .inv-table .num { text-align: right; }
 .inv-debit-dates {
