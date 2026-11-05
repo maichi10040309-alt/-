@@ -1,4 +1,4 @@
-import type { BillingType, Client, Invoice, LateAdjustment, RentalItem, UsageEntry, YearMonth } from '@/types';
+import type { BillingType, Client, Invoice, InvoiceBillingCategory, LateAdjustment, RentalItem, UsageEntry, YearMonth } from '@/types';
 import { addMonths, parseYearMonth, ymCompare } from '@/utils/date';
 
 export const CYCLE_LENGTH = 4; // 請求は4か月ごと
@@ -108,14 +108,14 @@ export function buildInvoiceMonths(
   usageEntries: UsageEntry[],
   lateAdjustments: LateAdjustment[],
   items: RentalItem[],
-  category: BillingType
+  category: InvoiceBillingCategory
 ): Pick<Invoice, 'months' | 'adjustments' | 'totalAmount' | 'nonTaxableTotal' | 'taxableTotal'> {
   const itemBillingTypeById = new Map(items.map((i) => [i.id, i.billingType]));
   const entryCategory = (itemId: string): BillingType => itemBillingTypeById.get(itemId) ?? 'insurance';
 
   const months: Invoice['months'] = cycle.months.map((ym) => {
     const entries = usageEntries.filter(
-      (u) => u.clientId === cycle.clientId && u.yearMonth === ym && entryCategory(u.itemId) === category
+      (u) => u.clientId === cycle.clientId && u.yearMonth === ym && (category === 'combined' || entryCategory(u.itemId) === category)
     );
     const lines = entries.map((e) => ({
       itemName: e.itemName,
@@ -138,8 +138,8 @@ export function buildInvoiceMonths(
     .filter(
       (a) =>
         a.clientId === cycle.clientId &&
-        cycleStartForMonth(a.billedYearMonth) === cycle.cycleStartMonth &&
-        a.billingType === category
+        cycle.months.includes(a.billedYearMonth) &&
+        (category === 'combined' || a.billingType === category)
     )
     .map((a) => ({
       originalYearMonth: a.originalYearMonth,

@@ -15,7 +15,7 @@ import {
   parseYearMonth,
   todayIso,
 } from '@/utils/date';
-import { buildInvoiceMonths, cycleStartForMonth, getClientCycles, type BillingCycle } from '@/utils/billing';
+import { buildInvoiceMonths, getClientCycles, type BillingCycle } from '@/utils/billing';
 import { navigate } from '@/ui/router';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { openModal } from '@/ui/components/modal';
@@ -110,7 +110,7 @@ function clientDueStatusLabel(
   referenceMonth: string
 ): string {
   if (client.paymentMethod === 'cash') {
-    return '都度現金払いのため自動請求対象外です。「早期請求」から請求書を作成してください。';
+    return '都度現金払いのため自動請求対象外です。「月次利用入力」で利用者と対象月を選んで発行してください。';
   }
   const cycles = getClientCycles(client, usageEntries, invoices, referenceMonth);
   if (cycles.length === 0) {
@@ -308,18 +308,18 @@ export function renderInvoicesPage(root: HTMLElement) {
     </div>
 
     <div class="card">
-      <h3 class="card-title">早期請求(途中解約・都度現金など)</h3>
+      <h3 class="card-title">早期請求(途中解約など)</h3>
       <p class="page-subtitle" style="margin:0 0 12px">
-        4か月そろう前に請求したい場合(途中解約など)や、都度現金の方の請求書を作りたい場合はここから作成できます。
+        4か月そろう前に請求したい場合はここから作成できます。都度現金払いは「月次利用入力」から発行してください。
       </p>
       <div class="form-grid" style="grid-template-columns:280px;margin-bottom:12px">
         <div class="form-field">
           <label>利用者</label>
           <select id="f-early-client">
             <option value="">選択してください</option>
-            ${[...clients]
+            ${clients.filter((client) => client.paymentMethod !== 'cash')
               .sort((a, b) => a.kana.localeCompare(b.kana, 'ja'))
-              .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${c.paymentMethod === 'cash' ? '(都度現金)' : ''}</option>`)
+              .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
               .join('')}
           </select>
         </div>
@@ -428,10 +428,16 @@ export function renderInvoicesPage(root: HTMLElement) {
   ): Promise<Invoice | null> {
     const { clients, usageEntries, invoices, lateAdjustments, items } = store.getState();
     const client = clients.find((c) => c.id === clientId);
-    if (!client) return null;
+    if (!client || client.paymentMethod === 'cash') return null;
     const cycles = getClientCycles(client, usageEntries, invoices, farReference);
     const cycle = cycles.find((c) => c.cycleStartMonth === cycleStartMonth);
     if (!cycle || cycle.combinedInvoice || categoryInvoiceOf(cycle, category)) return null;
+    if (invoices.some((invoice) => invoice.clientId === clientId &&
+        invoice.cycleStartMonth === invoice.cycleEndMonth &&
+        cycle.cycleStartMonth <= invoice.cycleStartMonth && cycle.cycleEndMonth >= invoice.cycleEndMonth)) {
+      await showAlert('対象期間に発行済みの月次請求書があります。重複するため、4か月分の請求書は発行できません。');
+      return null;
+    }
     const { months, adjustments, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(
       cycle,
       usageEntries,
@@ -646,11 +652,10 @@ export function renderInvoicesPage(root: HTMLElement) {
 
 function adjustmentRowHtml(a: LateAdjustment, clients: Client[], invoices: Invoice[]): string {
   const client = clients.find((c) => c.id === a.clientId);
-  const cycleStart = cycleStartForMonth(a.billedYearMonth);
   const alreadyInvoiced = invoices.some(
     (inv) =>
       inv.clientId === a.clientId &&
-      inv.cycleStartMonth === cycleStart &&
+      inv.cycleStartMonth <= a.billedYearMonth && inv.cycleEndMonth >= a.billedYearMonth &&
       (inv.billingCategory === a.billingType || inv.billingCategory === 'combined')
   );
   return `
@@ -799,6 +804,12 @@ function openAdjustmentModal(clients: Client[], existing?: LateAdjustment) {
   });
 }
 
+function invoiceCategoryLabel(inv: Invoice): string {
+  return inv.cycleStartMonth === inv.cycleEndMonth && inv.billingCategory === 'combined'
+    ? '都度現金'
+    : INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory];
+}
+
 function invoiceRowHtml(inv: Invoice): string {
   const client = store.getState().clients.find((c) => c.id === inv.clientId);
   const statusBadge = inv.totalAmount === 0
@@ -811,11 +822,11 @@ function invoiceRowHtml(inv: Invoice): string {
     : `<span class="badge badge-muted">未入金</span>`;
   return `
     <tr>
-      <td><input type="checkbox" class="js-invoice-check" data-id="${escapeHtml(inv.id)}" aria-label="${escapeHtml(client?.name ?? '削除済み利用者')}の${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]}請求書を選択" ${selectedInvoiceIds.has(inv.id) ? 'checked' : ''} ${inv.status !== 'issued' || inv.totalAmount === 0 ? 'disabled' : ''} /></td>
+      <td><input type="checkbox" class="js-invoice-check" data-id="${escapeHtml(inv.id)}" aria-label="${escapeHtml(client?.name ?? '削除済み利用者')}の${invoiceCategoryLabel(inv)}請求書を選択" ${selectedInvoiceIds.has(inv.id) ? 'checked' : ''} ${inv.status !== 'issued' || inv.totalAmount === 0 ? 'disabled' : ''} /></td>
       <td>${inv.invoiceNo ? escapeHtml(inv.invoiceNo) : '-'}</td>
       <td>${escapeHtml(client?.name ?? '(削除済み)')}</td>
-      <td>${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]}</td>
-      <td>${formatYmJapanese(inv.cycleStartMonth)} 〜 ${formatYmJapanese(inv.cycleEndMonth)}</td>
+      <td>${invoiceCategoryLabel(inv)}</td>
+      <td>${formatYmJapanese(inv.cycleStartMonth)}${inv.cycleStartMonth !== inv.cycleEndMonth ? ` 〜 ${formatYmJapanese(inv.cycleEndMonth)}` : '分'}</td>
       <td class="num">${formatYen(inv.totalAmount)}</td>
       <td>${statusBadge}</td>
       <td>${paidBadge}</td>

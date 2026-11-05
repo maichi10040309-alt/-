@@ -1,8 +1,9 @@
+import { buildInvoiceMonths } from '@/utils/billing';
 import { store, newId } from '@/store';
-import type { TaxCategory, UsageEntry } from '@/types';
+import type { Invoice, TaxCategory, UsageEntry } from '@/types';
 import { CLIENT_STATUS_LABELS, TAX_CATEGORY_LABELS, copayYenPerUnit } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
-import { addMonths, currentYearMonth, formatYmJapanese } from '@/utils/date';
+import { addMonths, currentYearMonth, formatYmJapanese, isValidYearMonth, todayIso } from '@/utils/date';
 import { openImportModal } from '@/ui/pages/importExcel';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { clientStatusBadge, focusClientOnNextRender } from '@/ui/pages/clients';
@@ -21,6 +22,8 @@ type Mode = 'input' | 'list';
 
 let mode: Mode = 'input';
 let selectedClientId = '';
+let issuingCashInvoice = false;
+let savingMonthlyUsage = false;
 let selectedMonth = currentYearMonth();
 let listMonthCount: 1 | 4 = 1;
 let draftRows: DraftRow[] = [];
@@ -39,7 +42,7 @@ export function renderUsagePage(root: HTMLElement) {
     <div class="toolbar">
       <div class="page-subtitle" style="margin-bottom:0">
         介護保険品目は単位数を入れると利用者負担割合から自己負担額を自動計算します。
-        保存すると4か月ごとの請求に自動反映されます。
+        保存すると請求に反映されます。都度現金払いの利用者は、ここから対象月分の請求書を発行できます。
       </div>
       <button class="btn btn-sm" id="btn-open-import">📥 Excelから一括取り込み</button>
     </div>
@@ -431,6 +434,7 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
           </tfoot>
         </table>
         <div class="form-actions">
+          <button class="btn" id="btn-cash-invoice" style="display:none">この月の現金払い請求書を発行</button>
           <button class="btn btn-primary" id="btn-save">この月の内容を保存</button>
         </div>
       `
@@ -443,8 +447,78 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
   loadDraftFromStore();
   renderRows(items);
 
+  const cashInvoiceButton = section.querySelector<HTMLButtonElement>('#btn-cash-invoice')!;
+  function updateCashInvoiceButton() {
+    cashInvoiceButton.style.display = sortedClients.find((client) => client.id === selectedClientId)?.paymentMethod === 'cash' ? '' : 'none';
+    cashInvoiceButton.disabled = issuingCashInvoice || savingMonthlyUsage;
+  }
+  updateCashInvoiceButton();
+
+  cashInvoiceButton.addEventListener('click', async () => {
+    if (issuingCashInvoice || savingMonthlyUsage) return;
+    const clientId = selectedClientId;
+    const yearMonth = section.querySelector<HTMLInputElement>('#f-month')!.value;
+    if (!isValidYearMonth(yearMonth)) {
+      await showAlert('対象月を選択してください。');
+      return;
+    }
+    const existingForMonth = () => store.getState().invoices.filter((invoice) =>
+      invoice.clientId === clientId && invoice.cycleStartMonth <= yearMonth && invoice.cycleEndMonth >= yearMonth
+    );
+    const monthlyDetails = () => {
+      const { usageEntries, lateAdjustments, items } = store.getState();
+      return buildInvoiceMonths({
+        clientId, cycleStartMonth: yearMonth, cycleEndMonth: yearMonth, months: [yearMonth],
+        isDue: true, insuranceInvoice: null, privateInvoice: null, combinedInvoice: null,
+      }, usageEntries, lateAdjustments, items, 'combined');
+    };
+    const client = store.getState().clients.find((entry) => entry.id === clientId);
+    if (client?.paymentMethod !== 'cash') return;
+    const existing = existingForMonth();
+    if (existing.length) {
+      if (existing.length === 1 && existing[0].cycleStartMonth === yearMonth && existing[0].cycleEndMonth === yearMonth) {
+        navigate(`invoices/${existing[0].id}`);
+      } else {
+        await showAlert('この月を含む請求書がすでにあります。請求書一覧で確認してください。');
+      }
+      return;
+    }
+    const details = monthlyDetails();
+    if (details.totalAmount === 0) {
+      await showAlert('この月の保存済み請求額は0円です。利用内容を入力し、保存してから発行してください。');
+      return;
+    }
+    issuingCashInvoice = true;
+    updateCashInvoiceButton();
+    try {
+      if (!await showConfirm(`${client.name}さんの${formatYmJapanese(yearMonth)}分を、保存済みの金額 ${formatYen(details.totalAmount)} で発行しますか？`)) return;
+      if (existingForMonth().length || savingMonthlyUsage ||
+          store.getState().clients.find((entry) => entry.id === clientId)?.paymentMethod !== 'cash' ||
+          JSON.stringify(monthlyDetails()) !== JSON.stringify(details)) {
+        await showAlert('請求内容が変わりました。対象月の内容を確認して、もう一度操作してください。');
+        return;
+      }
+      const invoice: Invoice = {
+        ...details, id: newId(), invoiceNo: store.nextInvoiceNo(), clientId,
+        cycleStartMonth: yearMonth, cycleEndMonth: yearMonth,
+        billingCategory: 'combined', billingTiming: 'early', status: 'issued',
+        issuedDate: todayIso(), paidDate: null, createdAt: new Date().toISOString(),
+      };
+      if (await store.saveInvoice(invoice)) navigate(`invoices/${invoice.id}`);
+      else {
+        store.refreshNow();
+        await showAlert('請求書を保存できませんでした。再読み込みして請求書一覧を確認してください。');
+      }
+    } finally {
+      issuingCashInvoice = false;
+      const currentButton = currentRoot?.querySelector<HTMLButtonElement>('#btn-cash-invoice');
+      if (currentButton) currentButton.disabled = savingMonthlyUsage;
+    }
+  });
+
   section.querySelector('#f-client')?.addEventListener('change', (e) => {
     selectedClientId = (e.target as HTMLSelectElement).value;
+    updateCashInvoiceButton();
     loadDraftFromStore();
     renderRows(items);
   });
@@ -495,8 +569,8 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
     renderRows(items);
   });
 
-  section.querySelector('#btn-save')?.addEventListener('click', () => {
-    if (!selectedClientId || !selectedMonth) return;
+  section.querySelector('#btn-save')?.addEventListener('click', async () => {
+    if (!selectedClientId || !selectedMonth || savingMonthlyUsage || issuingCashInvoice) return;
     const entries: UsageEntry[] = draftRows
       .filter((r) => r.itemId)
       .map((r) => ({
@@ -512,7 +586,18 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
         note: r.note ?? '',
         enteredAt: new Date().toISOString(),
       }));
-    store.setUsageEntriesForMonth(selectedClientId, selectedMonth, entries);
+    savingMonthlyUsage = true;
+    updateCashInvoiceButton();
+    try {
+      if (!await store.setUsageEntriesForMonth(selectedClientId, selectedMonth, entries)) {
+        store.refreshNow();
+        await showAlert('利用内容を保存できませんでした。再読み込みして確認してください。');
+      }
+    } finally {
+      savingMonthlyUsage = false;
+      const currentButton = currentRoot?.querySelector<HTMLButtonElement>('#btn-cash-invoice');
+      if (currentButton) currentButton.disabled = issuingCashInvoice;
+    }
   });
 }
 
