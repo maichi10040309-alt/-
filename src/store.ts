@@ -329,6 +329,7 @@ class Store {
   // Supabase側に反映されていない変更がサーバーからの再取得で巻き戻ってしまう
   // 事故を防ぐため)。書き込みが全て終わった時点で、保留していた再取得を行う。
   private pendingWrites = 0;
+  private deletingInvoiceIds = new Set<string>();
   private refreshPendingAfterWrites = false;
 
   constructor() {
@@ -496,6 +497,7 @@ class Store {
 
   // ---- Invoice ----
   saveInvoice(invoice: Invoice): Promise<boolean> {
+    if (this.deletingInvoiceIds.has(invoice.id)) return Promise.resolve(false);
     const idx = this.state.invoices.findIndex((i) => i.id === invoice.id);
     if (idx >= 0) this.state.invoices[idx] = invoice;
     else this.state.invoices.push(invoice);
@@ -503,6 +505,27 @@ class Store {
     return this.trackWrite(
       this.runWrite(supabase.from('invoices').upsert(invoiceToDb(invoice)), 'invoice upsert failed')
     );
+  }
+
+  async deleteInvoice(id: string): Promise<boolean> {
+    // 保存処理が後から削除済みの請求書を書き戻すことを防ぐ。
+    if (this.pendingWrites > 0 || !this.state.invoices.some((invoice) => invoice.id === id)) return false;
+    this.deletingInvoiceIds.add(id);
+    try {
+      return await this.trackWrite((async () => {
+        const deleted = await this.runWrite(
+          supabase.from('invoices').delete().eq('id', id).select('id').single(),
+          'invoice delete failed'
+        );
+        if (deleted) {
+          this.state.invoices = this.state.invoices.filter((invoice) => invoice.id !== id);
+          this.notify();
+        }
+        return deleted;
+      })());
+    } finally {
+      this.deletingInvoiceIds.delete(id);
+    }
   }
 
   // ---- ClientEvent(新規・終了・休止などの履歴) ----

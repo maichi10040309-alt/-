@@ -945,6 +945,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
           : `<button class="btn btn-primary" id="btn-paid">入金済みにする</button>`
       }
       ${early ? `<label style="align-self:center">発行日 <input type="date" id="f-issued-date" value="${issueDate}" required /></label>` : ''}
+      <button class="btn btn-danger" id="btn-delete-invoice">請求書を削除</button>
       <button class="btn" id="btn-print" ${invoice.totalAmount === 0 ? 'disabled' : ''}>🖨 印刷</button>
     </div>
     <p class="no-print" style="color:var(--color-text-muted);font-size:12px;margin:-10px 0 16px;text-align:right">
@@ -966,6 +967,31 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
     if (!saved) await showAlert('発行日の保存に失敗しました。再度お試しください。');
   });
   root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
+  root.querySelector('#btn-delete-invoice')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const current = store.getState().invoices.find((entry) => entry.id === invoiceId);
+    if (!current) return;
+    button.disabled = true;
+    try {
+      const clientName = store.getState().clients.find((client) => client.id === current.clientId)?.name ?? '利用者不明';
+      const start = formatYmJapanese(current.cycleStartMonth);
+      const period = current.cycleStartMonth === current.cycleEndMonth ? start : `${start}〜${formatYmJapanese(current.cycleEndMonth)}`;
+      const paidWarning = current.paidDate ? '\n入金済みのため、この請求書の入金記録も削除されます。' : '';
+      if (!await showConfirm(`${clientName}さんの請求書を削除しますか？\n${current.invoiceNo || '番号未設定'} ／ ${period}分 ／ ${formatYen(current.totalAmount)}\n削除すると元に戻せません。月次利用入力の明細は残ります。${paidWarning}`, '請求書の削除')) return;
+      if (store.getState().invoices.find((entry) => entry.id === invoiceId) !== current) {
+        await showAlert('請求書が更新されました。最新の内容を確認してから削除してください。');
+        return;
+      }
+      if (!await store.deleteInvoice(invoiceId)) {
+        await showAlert('削除できませんでした。保存処理が終わったことと通信状態を確認し、もう一度お試しください。');
+        return;
+      }
+      selectedInvoiceIds.delete(invoiceId);
+      navigate('invoices');
+    } finally {
+      button.disabled = false;
+    }
+  });
   root.querySelector('#btn-print')?.addEventListener('click', async () => {
     if (invoice.totalAmount === 0) return;
     try {
