@@ -765,3 +765,12 @@ table.data-table {
 
 .invoice-sheet > .inv-footer { margin-top: auto; padding-top: 6mm; }
 .invoice-sheet > .inv-debit-dates + .inv-footer { margin-top: 6mm; padding-top: 0; }
+
+/* 一括印刷は画面の一覧を維持し、印刷時だけ専用の紙面を表示する。 */
+#invoice-batch-print { position: absolute; left: -100000px; top: 0; width: 186mm; }
+@media print {
+  body.invoice-batch-printing > :not(#invoice-batch-print) { display: none !important; }
+  body.invoice-batch-printing #invoice-batch-print { position: static; width: 186mm; }
+  #invoice-batch-print .invoice-sheet { break-after: page; page-break-after: always; }
+  #invoice-batch-print .invoice-sheet:last-child { break-after: auto; page-break-after: auto; }
+}

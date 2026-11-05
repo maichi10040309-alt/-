@@ -33,6 +33,58 @@ const BILLING_TYPE_LABELS: Record<BillingType, string> = {
 };
 
 let referenceMonth = currentYearMonth();
+const selectedInvoiceIds = new Set<string>();
+const attemptedDraftIds = new Set<string>();
+let issuingExistingDrafts = false;
+
+/** 以前の下書きも番号・発行日を保持しながら発行済みに移行する。 */
+async function issueExistingDrafts() {
+  if (issuingExistingDrafts) return;
+  const drafts = store.getState().invoices.filter((invoice) => invoice.status === 'draft' && !attemptedDraftIds.has(invoice.id));
+  if (!drafts.length) return;
+  issuingExistingDrafts = true;
+  let failed = 0;
+  try {
+    for (const draft of drafts) {
+      attemptedDraftIds.add(draft.id);
+      const current = store.getState().invoices.find((invoice) => invoice.id === draft.id);
+      if (!current || current.status !== 'draft') continue;
+      try {
+        if (!await store.saveInvoice({ ...current, status: 'issued',
+          invoiceNo: current.invoiceNo || store.nextInvoiceNo(), issuedDate: invoiceIssueDate(current) })) failed++;
+      } catch { failed++; }
+    }
+  } finally {
+    issuingExistingDrafts = false;
+  }
+  if (failed) await showAlert(`${failed}件の請求書を発行済みとして保存できませんでした。通信状態を確認し、再読み込みしてください。`);
+}
+
+type PrintInvoiceMode = 'all' | 'unpaid' | 'paid' | 'selected';
+
+function invoicesForPrinting(invoices: Invoice[], mode: PrintInvoiceMode): Invoice[] {
+  return invoices.filter((invoice) => invoice.status === 'issued' &&
+    (mode === 'all' || (mode === 'paid' && !!invoice.paidDate) ||
+      (mode === 'unpaid' && !invoice.paidDate) || (mode === 'selected' && selectedInvoiceIds.has(invoice.id))));
+}
+
+function printInvoiceBatch(invoices: Invoice[]) {
+  document.querySelector('#invoice-batch-print')?.remove();
+  const container = document.createElement('div');
+  container.id = 'invoice-batch-print';
+  container.innerHTML = invoices.map(invoiceSheetHtml).join('');
+  container.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
+  document.body.append(container);
+  document.body.classList.add('invoice-batch-printing');
+  try {
+    fitInvoiceForPrint();
+    window.print();
+  } catch (error) {
+    container.remove();
+    document.body.classList.remove('invoice-batch-printing');
+    throw error;
+  }
+}
 
 /** そのサイクルの指定区分(保険/自費)に、請求すべき実績(利用実績 or 月遅れ調整)があるかどうか */
 function cycleCategoryHasData(cycle: BillingCycle, category: BillingType): boolean {
@@ -116,6 +168,10 @@ export function renderInvoicesPage(root: HTMLElement) {
   const pastDueRows = allDueRows.filter((r) => !isCurrent(r)).sort((a, b) => a.cycleEndMonth.localeCompare(b.cycleEndMonth));
 
   const sortedInvoices = [...invoices].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const invoiceIds = new Set(invoices.map((invoice) => invoice.id));
+  for (const id of selectedInvoiceIds) if (!invoiceIds.has(id)) selectedInvoiceIds.delete(id);
+  // 保存通知で再描画されても、移行を重複実行しない。
+  queueMicrotask(() => { void issueExistingDrafts(); });
 
   root.innerHTML = `
     <div class="toolbar">
@@ -315,9 +371,18 @@ export function renderInvoicesPage(root: HTMLElement) {
 
     <div class="card">
       <h3 class="card-title">請求書一覧</h3>
+      <div class="toolbar-controls" style="flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn btn-sm" id="btn-print-all">すべて印刷</button>
+        <button class="btn btn-sm" id="btn-print-unpaid">未入金のみ印刷</button>
+        <button class="btn btn-sm" id="btn-print-paid">入金済みのみ印刷</button>
+        <button class="btn btn-sm btn-primary" id="btn-print-selected">選択した請求書を印刷</button>
+        <span id="invoice-selection-count" style="font-size:13px"></span>
+      </div>
+      <p style="font-size:12px;color:var(--color-text-muted)">この一覧の発行済み請求書が印刷対象です。請求書ごとにA4・1ページで印刷します。</p>
       <table class="data-table">
         <thead>
           <tr>
+            <th style="width:24px"><input type="checkbox" id="f-select-all-invoices" aria-label="請求書をすべて選択" /></th>
             <th>請求書番号</th>
             <th>利用者</th>
             <th>区分</th>
@@ -331,7 +396,7 @@ export function renderInvoicesPage(root: HTMLElement) {
         <tbody id="invoice-rows">
           ${
             sortedInvoices.length === 0
-              ? `<tr class="empty-row"><td colspan="8">請求書はまだ作成されていません。</td></tr>`
+              ? `<tr class="empty-row"><td colspan="9">請求書はまだ作成されていません。</td></tr>`
               : sortedInvoices.map(invoiceRowHtml).join('')
           }
         </tbody>
@@ -347,19 +412,20 @@ export function renderInvoicesPage(root: HTMLElement) {
     }
   });
 
-  function createInvoiceForCycle(
+  async function createInvoiceForCycle(
     clientId: string,
     cycleStartMonth: string,
     farReference: string,
     category: BillingType,
     navigateAfter = true,
     billingTiming: 'regular' | 'early' = 'regular'
-  ): Invoice | null {
+  ): Promise<Invoice | null> {
+    const { clients, usageEntries, invoices, lateAdjustments, items } = store.getState();
     const client = clients.find((c) => c.id === clientId);
     if (!client) return null;
     const cycles = getClientCycles(client, usageEntries, invoices, farReference);
     const cycle = cycles.find((c) => c.cycleStartMonth === cycleStartMonth);
-    if (!cycle) return null;
+    if (!cycle || cycle.combinedInvoice || categoryInvoiceOf(cycle, category)) return null;
     const { months, adjustments, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(
       cycle,
       usageEntries,
@@ -369,7 +435,7 @@ export function renderInvoicesPage(root: HTMLElement) {
     );
     const invoice: Invoice = {
       id: newId(),
-      invoiceNo: '',
+      invoiceNo: store.nextInvoiceNo(),
       clientId,
       cycleStartMonth: cycle.cycleStartMonth,
       cycleEndMonth: cycle.cycleEndMonth,
@@ -379,13 +445,16 @@ export function renderInvoicesPage(root: HTMLElement) {
       nonTaxableTotal,
       taxableTotal,
       billingCategory: category,
-      status: 'draft',
+      status: 'issued',
       billingTiming,
       issuedDate: billingTiming === 'early' ? todayIso() : `${addMonths(cycle.cycleEndMonth, 1)}-10`,
       paidDate: null,
       createdAt: new Date().toISOString(),
     };
-    store.saveInvoice(invoice);
+    if (!await store.saveInvoice(invoice)) {
+      await showAlert('請求書の保存に失敗しました。通信状態を確認し、再読み込みしてください。');
+      return null;
+    }
     if (navigateAfter) navigate(`invoices/${invoice.id}`);
     return invoice;
   }
@@ -397,10 +466,10 @@ export function renderInvoicesPage(root: HTMLElement) {
     bulkBtnId: string,
     rows: DueRow[]
   ) {
-    root.querySelector(`#${rowsElId}`)?.addEventListener('click', (e) => {
+    root.querySelector(`#${rowsElId}`)?.addEventListener('click', async (e) => {
       const btn = (e.target as HTMLElement).closest('.js-create') as HTMLElement | null;
       if (!btn) return;
-      createInvoiceForCycle(
+      await createInvoiceForCycle(
         btn.dataset.client!,
         btn.dataset.cycle!,
         referenceMonth,
@@ -426,10 +495,10 @@ export function renderInvoicesPage(root: HTMLElement) {
       for (const cb of checked) {
         const row = rows[Number(cb.dataset.index)];
         if (!row) continue;
-        const invoice = createInvoiceForCycle(row.clientId, row.cycleStartMonth, referenceMonth, row.category, false);
+        const invoice = await createInvoiceForCycle(row.clientId, row.cycleStartMonth, referenceMonth, row.category, false);
         if (invoice) created++;
       }
-      await showAlert(`${created}件の請求書を作成しました(下書き)。内容は「請求書一覧」から確認できます。`);
+      await showAlert(`${created}件の請求書を発行済みで作成しました。内容は「請求書一覧」から確認できます。`);
       renderInvoicesPage(root);
     });
   }
@@ -492,7 +561,7 @@ export function renderInvoicesPage(root: HTMLElement) {
     const cycleStartMonth = btn.dataset.cycle!;
     const category = btn.dataset.category as BillingType;
     if (!(await showConfirm(`${BILLING_TYPE_LABELS[category]}分の請求書をこの期間で作成します。よろしいですか?`))) return;
-    createInvoiceForCycle(earlyClientSelect.value, cycleStartMonth, todayMonth, category, true, 'early');
+    await createInvoiceForCycle(earlyClientSelect.value, cycleStartMonth, todayMonth, category, true, 'early');
   });
 
   root.querySelector('#invoice-rows')?.addEventListener('click', (e) => {
@@ -500,6 +569,53 @@ export function renderInvoicesPage(root: HTMLElement) {
     if (!btn) return;
     navigate(`invoices/${btn.dataset.id}`);
   });
+
+  const printModes: PrintInvoiceMode[] = ['all', 'unpaid', 'paid', 'selected'];
+  function updateInvoiceSelection() {
+    const checkboxes = Array.from(root.querySelectorAll<HTMLInputElement>('.js-invoice-check:not(:disabled)'));
+    const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
+    const all = root.querySelector<HTMLInputElement>('#f-select-all-invoices');
+    if (all) {
+      all.checked = checkboxes.length > 0 && selected === checkboxes.length;
+      all.indeterminate = selected > 0 && selected < checkboxes.length;
+      all.disabled = !checkboxes.length;
+    }
+    const label = root.querySelector('#invoice-selection-count');
+    if (label) label.textContent = `${selected}件選択中`;
+    for (const mode of printModes) {
+      const button = root.querySelector<HTMLButtonElement>(`#btn-print-${mode}`);
+      if (button) button.disabled = !invoicesForPrinting(sortedInvoices, mode).length;
+    }
+  }
+  root.querySelector('#f-select-all-invoices')?.addEventListener('change', (event) => {
+    const checked = (event.target as HTMLInputElement).checked;
+    root.querySelectorAll<HTMLInputElement>('.js-invoice-check:not(:disabled)').forEach((checkbox) => {
+      checkbox.checked = checked;
+      if (checked) selectedInvoiceIds.add(checkbox.dataset.id!);
+      else selectedInvoiceIds.delete(checkbox.dataset.id!);
+    });
+    updateInvoiceSelection();
+  });
+  root.querySelector('#invoice-rows')?.addEventListener('change', (event) => {
+    const checkbox = event.target as HTMLInputElement;
+    if (!checkbox.matches('.js-invoice-check')) return;
+    if (checkbox.checked) selectedInvoiceIds.add(checkbox.dataset.id!);
+    else selectedInvoiceIds.delete(checkbox.dataset.id!);
+    updateInvoiceSelection();
+  });
+  for (const mode of printModes) {
+    root.querySelector(`#btn-print-${mode}`)?.addEventListener('click', async () => {
+      const current = [...store.getState().invoices].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const targets = invoicesForPrinting(current, mode);
+      if (!targets.length) {
+        await showAlert('印刷対象の請求書がありません。');
+        return;
+      }
+      try { printInvoiceBatch(targets); }
+      catch { await showAlert('印刷画面を開けませんでした。もう一度お試しください。'); }
+    });
+  }
+  updateInvoiceSelection();
 
   root.querySelector('#btn-add-adjustment')?.addEventListener('click', () => {
     if (clients.length === 0) return;
@@ -681,12 +797,13 @@ function invoiceRowHtml(inv: Invoice): string {
   const statusBadge =
     inv.status === 'issued'
       ? `<span class="badge badge-success">発行済み(${formatDateJapanese(invoiceIssueDate(inv))})</span>`
-      : `<span class="badge badge-warning">下書き</span>`;
+      : `<span class="badge badge-warning">発行処理中</span>`;
   const paidBadge = inv.paidDate
     ? `<span class="badge badge-success">入金済み(${formatDateJapanese(inv.paidDate)})</span>`
     : `<span class="badge badge-muted">未入金</span>`;
   return `
     <tr>
+      <td><input type="checkbox" class="js-invoice-check" data-id="${escapeHtml(inv.id)}" aria-label="${escapeHtml(client?.name ?? '削除済み利用者')}の${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]}請求書を選択" ${selectedInvoiceIds.has(inv.id) ? 'checked' : ''} ${inv.status !== 'issued' ? 'disabled' : ''} /></td>
       <td>${inv.invoiceNo ? escapeHtml(inv.invoiceNo) : '-'}</td>
       <td>${escapeHtml(client?.name ?? '(削除済み)')}</td>
       <td>${INVOICE_BILLING_CATEGORY_LABELS[inv.billingCategory]}</td>
@@ -701,13 +818,7 @@ function invoiceRowHtml(inv: Invoice): string {
   `;
 }
 
-export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
-  const invoice = store.getState().invoices.find((i) => i.id === invoiceId);
-  if (!invoice) {
-    root.innerHTML = `<div class="card">請求書が見つかりません。<button class="btn" id="btn-back">請求書一覧に戻る</button></div>`;
-    root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
-    return;
-  }
+function invoiceSheetHtml(invoice: Invoice): string {
   const client = store.getState().clients.find((c) => c.id === invoice.clientId);
   const company = store.getState().company;
 
@@ -722,27 +833,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   const monthRows = displayMonths.map((m, idx) => monthRowHtml(m, idx, ratioLabel)).join('');
   const adjustmentRows = invoice.adjustments.map(adjustmentRowHtmlForTable).join('');
 
-  root.innerHTML = `
-    <div class="invoice-actions no-print">
-      <button class="btn" id="btn-back">← 一覧に戻る</button>
-      <div style="flex:1"></div>
-      ${
-        invoice.paidDate
-          ? `<span class="badge badge-success" style="align-self:center">入金済み(${formatDateJapanese(invoice.paidDate)})</span>
-             <button class="btn" id="btn-unpaid">未入金に戻す</button>`
-          : `<button class="btn btn-primary" id="btn-paid">入金済みにする</button>`
-      }
-      ${
-        invoice.status === 'draft'
-          ? `<button class="btn btn-primary" id="btn-issue">発行済みにする</button>`
-          : ''
-      }
-      ${early ? `<label style="align-self:center">発行日 <input type="date" id="f-issued-date" value="${issueDate}" required /></label>` : ''}
-      <button class="btn" id="btn-print">🖨 印刷</button>
-    </div>
-    <p class="no-print" style="color:var(--color-text-muted);font-size:12px;margin:-10px 0 16px;text-align:right">
-      印刷ボタンで画面が変わらない場合は、キーボードの Ctrl+P(Macは⌘+P)をお試しください。
-    </p>
+  return `
     <div class="invoice-sheet" id="invoice-sheet">
       <h2 class="inv-title">請求書${invoice.billingCategory !== 'combined' ? `<span class="inv-category-badge no-print">(${INVOICE_BILLING_CATEGORY_LABELS[invoice.billingCategory]})</span>` : ''}</h2>
       <div class="inv-header-row">
@@ -806,6 +897,37 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       </details>
     </div>
   `;
+}
+
+export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
+  const invoice = store.getState().invoices.find((i) => i.id === invoiceId);
+  if (!invoice) {
+    root.innerHTML = `<div class="card">請求書が見つかりません。<button class="btn" id="btn-back">請求書一覧に戻る</button></div>`;
+    root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
+    return;
+  }
+  queueMicrotask(() => { void issueExistingDrafts(); });
+  const early = isEarlyInvoice(invoice);
+  const issueDate = invoiceIssueDate(invoice);
+
+  root.innerHTML = `
+    <div class="invoice-actions no-print">
+      <button class="btn" id="btn-back">← 一覧に戻る</button>
+      <div style="flex:1"></div>
+      ${
+        invoice.paidDate
+          ? `<span class="badge badge-success" style="align-self:center">入金済み(${formatDateJapanese(invoice.paidDate)})</span>
+             <button class="btn" id="btn-unpaid">未入金に戻す</button>`
+          : `<button class="btn btn-primary" id="btn-paid">入金済みにする</button>`
+      }
+      ${early ? `<label style="align-self:center">発行日 <input type="date" id="f-issued-date" value="${issueDate}" required /></label>` : ''}
+      <button class="btn" id="btn-print">🖨 印刷</button>
+    </div>
+    <p class="no-print" style="color:var(--color-text-muted);font-size:12px;margin:-10px 0 16px;text-align:right">
+      印刷ボタンで画面が変わらない場合は、キーボードの Ctrl+P(Macは⌘+P)をお試しください。
+    </p>
+    ${invoiceSheetHtml(invoice)}
+  `;
 
   root.querySelector('#f-issued-date')?.addEventListener('change', async (event) => {
     const input = event.target as HTMLInputElement;
@@ -821,17 +943,6 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   });
   root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
   root.querySelector('#btn-print')?.addEventListener('click', () => { fitInvoiceForPrint(); window.print(); });
-  root.querySelector('#btn-issue')?.addEventListener('click', async () => {
-    if (!(await showConfirm('この請求書を発行済みにします。よろしいですか?'))) return;
-    const invoiceNo = invoice.invoiceNo || store.nextInvoiceNo();
-    store.saveInvoice({
-      ...invoice,
-      invoiceNo,
-      status: 'issued',
-      billingTiming: early ? 'early' : 'regular',
-      issuedDate: invoiceIssueDate(store.getState().invoices.find((entry) => entry.id === invoiceId) ?? invoice),
-    });
-  });
   root.querySelector('#btn-paid')?.addEventListener('click', async () => {
     if (!(await showConfirm('この請求書を入金済みにします。よろしいですか?'))) return;
     store.saveInvoice({ ...invoice, paidDate: todayIso() });
