@@ -776,6 +776,6 @@ table.data-table {
 }
 
 
-.inv-company-signature { display: flex; align-items: center; justify-content: flex-end; gap: 3mm; margin-top: 8px; }
+.inv-company-signature { display: flex; align-items: center; justify-content: flex-end; gap: 0; margin-top: 8px; }
 .inv-company-details { min-width: 0; overflow-wrap: anywhere; }
-.inv-company-seal { width: 20mm; height: 20mm; flex: 0 0 20mm; object-fit: contain; }
+.inv-company-seal { width: 20mm; height: 20mm; flex: 0 0 20mm; object-fit: contain; margin-left: -5mm; position: relative; z-index: 1; mix-blend-mode: multiply; }
