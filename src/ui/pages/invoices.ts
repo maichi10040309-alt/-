@@ -846,11 +846,37 @@ function invoiceSheetHtml(invoice: Invoice): string {
   const issueDate = invoiceIssueDate(invoice);
   const debitDates = invoiceDebitDates(invoice);
   const issueDateLabel = formatDateJapanese(issueDate);
-  // 負担割合は介護保険分の請求書のみ意味を持つ(自費分は自己負担割合の概念がないため表示しない)
-  const ratioLabel = client && invoice.billingCategory !== 'private' ? COMPACT_COPAY_LABELS[client.copayRatio] : '';
-
-  const monthRows = displayMonths.map((m, idx) => monthRowHtml(m, idx, ratioLabel)).join('');
-  const adjustmentRows = invoice.adjustments.map(adjustmentRowHtmlForTable).join('');
+  const ratioLabel = client ? COMPACT_COPAY_LABELS[client.copayRatio] : '';
+  // 都度現金や旧形式の合算請求書は、請求書全体の区分だけでは自費を判定できない。
+  const itemCategories = new Map<string, Set<BillingType>>();
+  if (invoice.billingCategory === 'combined') {
+    for (const item of store.getState().items) {
+      const categories = itemCategories.get(item.name) ?? new Set<BillingType>();
+      categories.add(item.billingType);
+      itemCategories.set(item.name, categories);
+    }
+  }
+  const categoryOf = (itemName: string) => {
+    if (invoice.billingCategory !== 'combined') return invoice.billingCategory;
+    const categories = itemCategories.get(itemName);
+    return categories?.size === 1 ? [...categories][0] : undefined;
+  };
+  const billedLines = [...displayMonths.flatMap((month) => month.lines), ...invoice.adjustments]
+    .filter((line) => line.amount !== 0);
+  const privateOnly = invoice.billingCategory === 'private' ||
+    (invoice.billingCategory === 'combined' && billedLines.length > 0 &&
+      billedLines.every((line) => categoryOf(line.itemName) === 'private'));
+  const monthRows = displayMonths.map((month, idx) => {
+    if (privateOnly) return monthRowHtml(month, idx, '自費');
+    if (invoice.billingCategory === 'insurance') return monthRowHtml(month, idx, ratioLabel);
+    const categories = new Set(month.lines.filter((line) => line.amount !== 0).map((line) => categoryOf(line.itemName)));
+    const label = categories.has('private')
+      ? (categories.has('insurance') ? '保険・自費' : '自費')
+      : categories.has('insurance') ? ratioLabel : '';
+    return monthRowHtml(month, idx, label);
+  }).join('');
+  const adjustmentRows = invoice.adjustments.map((line) =>
+    adjustmentRowHtmlForTable(line, categoryOf(line.itemName) === 'private' ? '自費' : '')).join('');
 
   return `
     <div class="invoice-sheet" id="invoice-sheet">
@@ -881,7 +907,7 @@ function invoiceSheetHtml(invoice: Invoice): string {
         <thead>
           <tr>
             <th></th>
-            <th>${invoice.billingCategory === 'private' ? '自費' : '負担割合'}</th>
+            <th>${privateOnly ? '自費' : invoice.billingCategory === 'combined' ? '区分' : '負担割合'}</th>
             <th class="num">非課税分</th>
             <th class="num">課税分</th>
             <th class="num">月別合計金額</th>
@@ -1038,11 +1064,11 @@ function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel:
   `;
 }
 
-function adjustmentRowHtmlForTable(a: Invoice['adjustments'][number]): string {
+function adjustmentRowHtmlForTable(a: Invoice['adjustments'][number], categoryLabel: string): string {
   return `
     <tr>
       <td>${formatYmJapanese(a.originalYearMonth)}分(月遅れ)</td>
-      <td></td>
+      <td>${categoryLabel}</td>
       <td class="num">${a.taxCategory === 'nontaxable' ? formatYen(a.amount) : formatYen(0)}</td>
       <td class="num">${a.taxCategory === 'taxable' ? formatYen(a.amount) : formatYen(0)}</td>
       <td class="num">${formatYen(a.amount)}</td>
