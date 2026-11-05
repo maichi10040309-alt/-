@@ -329,6 +329,9 @@ class Store {
   // Supabase側に反映されていない変更がサーバーからの再取得で巻き戻ってしまう
   // 事故を防ぐため)。書き込みが全て終わった時点で、保留していた再取得を行う。
   private pendingWrites = 0;
+  private writeRevision = 0;
+  private refreshRequest = 0;
+  private appliedRefresh = 0;
   private deletingInvoiceIds = new Set<string>();
   private refreshPendingAfterWrites = false;
 
@@ -362,6 +365,7 @@ class Store {
   /** Supabaseへの書き込みPromiseを進行中として登録し、完了時に保留中のrefreshがあれば実行する */
   private trackWrite(promise: Promise<boolean>): Promise<boolean> {
     this.pendingWrites++;
+    this.writeRevision++;
     return promise.finally(() => {
       this.pendingWrites--;
       if (this.pendingWrites === 0 && this.refreshPendingAfterWrites) {
@@ -401,15 +405,20 @@ class Store {
       this.refreshPendingAfterWrites = true;
       return;
     }
+    const request = ++this.refreshRequest;
+    const revision = this.writeRevision;
     try {
       const fresh = await fetchAllFromSupabase();
+      // 削除・保存より前に取得を始めた結果で、更新済みの画面を巻き戻さない。
+      if (request < this.appliedRefresh || revision !== this.writeRevision) return;
+      this.appliedRefresh = request;
       this.state = fresh;
       this.loadError = null;
       this.ready = true;
       this.notify();
     } catch (err) {
       console.error('Supabaseからのデータ取得に失敗しました', err);
-      if (isInitial) {
+      if (isInitial && !this.ready) {
         this.loadError =
           'データベースに接続できませんでした。インターネット接続を確認し、画面を再読み込みしてください。';
         this.ready = true;
@@ -505,6 +514,14 @@ class Store {
     return this.trackWrite(
       this.runWrite(supabase.from('invoices').upsert(invoiceToDb(invoice)), 'invoice upsert failed')
     );
+  }
+
+  async fetchBillableInvoicesForMonth(clientId: string, month: string): Promise<Invoice[]> {
+    const { data, error } = await supabase.from('invoices').select('*')
+      .eq('client_id', clientId).lte('cycle_start_month', month).gte('cycle_end_month', month)
+      .neq('total_amount', 0);
+    if (error) throw error;
+    return (data ?? []).map(invoiceFromDb);
   }
 
   async deleteInvoice(id: string): Promise<boolean> {

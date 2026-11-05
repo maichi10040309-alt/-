@@ -1,7 +1,7 @@
 import { buildInvoiceMonths } from '@/utils/billing';
 import { store, newId } from '@/store';
 import type { Invoice, TaxCategory, UsageEntry } from '@/types';
-import { CLIENT_STATUS_LABELS, TAX_CATEGORY_LABELS, copayYenPerUnit } from '@/types';
+import { CLIENT_STATUS_LABELS, INVOICE_BILLING_CATEGORY_LABELS, TAX_CATEGORY_LABELS, copayYenPerUnit } from '@/types';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { addMonths, currentYearMonth, formatYmJapanese, isValidYearMonth, todayIso } from '@/utils/date';
 import { openImportModal } from '@/ui/pages/importExcel';
@@ -462,9 +462,21 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
       await showAlert('対象月を選択してください。');
       return;
     }
-    const existingForMonth = () => store.getState().invoices.filter((invoice) =>
-      invoice.clientId === clientId && invoice.cycleStartMonth <= yearMonth && invoice.cycleEndMonth >= yearMonth
-    );
+    const existingForMonth = () => store.fetchBillableInvoicesForMonth(clientId, yearMonth);
+    async function showExistingInvoices(existing: Invoice[]) {
+      const lines = existing.map((invoice) => {
+        const start = formatYmJapanese(invoice.cycleStartMonth);
+        const end = formatYmJapanese(invoice.cycleEndMonth);
+        const period = start === end ? start : `${start}〜${end}`;
+        const category = start === end && invoice.billingCategory === 'combined'
+          ? '都度現金' : INVOICE_BILLING_CATEGORY_LABELS[invoice.billingCategory];
+        return `${invoice.invoiceNo || '番号未設定'} ／ ${period}分 ／ ${category} ／ ${formatYen(invoice.totalAmount)}${invoice.paidDate ? '（入金済み）' : ''}`;
+      });
+      const message = `この月を含む請求書が残っています。二重請求を防ぐため、新しい請求書は発行しません。\n\n${lines.join('\n')}`;
+      if (existing.length === 1) {
+        if (await showConfirm(`${message}\n\n該当の請求書を開きますか？`, '発行済みの請求書')) navigate(`invoices/${existing[0].id}`);
+      } else if (await showConfirm(`${message}\n\n請求書一覧を開きますか？`, '発行済みの請求書')) navigate('invoices');
+    }
     const monthlyDetails = () => {
       const { usageEntries, lateAdjustments, items } = store.getState();
       return buildInvoiceMonths({
@@ -474,25 +486,26 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
     };
     const client = store.getState().clients.find((entry) => entry.id === clientId);
     if (client?.paymentMethod !== 'cash') return;
-    const existing = existingForMonth();
-    if (existing.length) {
-      if (existing.length === 1 && existing[0].cycleStartMonth === yearMonth && existing[0].cycleEndMonth === yearMonth) {
-        navigate(`invoices/${existing[0].id}`);
-      } else {
-        await showAlert('この月を含む請求書がすでにあります。請求書一覧で確認してください。');
-      }
-      return;
-    }
-    const details = monthlyDetails();
-    if (details.totalAmount === 0) {
-      await showAlert('この月の保存済み請求額は0円です。利用内容を入力し、保存してから発行してください。');
-      return;
-    }
     issuingCashInvoice = true;
     updateCashInvoiceButton();
     try {
+      const existing = await existingForMonth();
+      if (existing.length) {
+        await showExistingInvoices(existing);
+        return;
+      }
+      const details = monthlyDetails();
+      if (details.totalAmount === 0) {
+        await showAlert('この月の保存済み請求額は0円です。利用内容を入力し、保存してから発行してください。');
+        return;
+      }
       if (!await showConfirm(`${client.name}さんの${formatYmJapanese(yearMonth)}分を、保存済みの金額 ${formatYen(details.totalAmount)} で発行しますか？`)) return;
-      if (existingForMonth().length || savingMonthlyUsage ||
+      const remaining = await existingForMonth();
+      if (remaining.length) {
+        await showExistingInvoices(remaining);
+        return;
+      }
+      if (savingMonthlyUsage ||
           store.getState().clients.find((entry) => entry.id === clientId)?.paymentMethod !== 'cash' ||
           JSON.stringify(monthlyDetails()) !== JSON.stringify(details)) {
         await showAlert('請求内容が変わりました。対象月の内容を確認して、もう一度操作してください。');
@@ -509,6 +522,9 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
         store.refreshNow();
         await showAlert('請求書を保存できませんでした。再読み込みして請求書一覧を確認してください。');
       }
+    } catch (error) {
+      console.error('現金払い請求書の確認・発行に失敗しました', error);
+      await showAlert('請求書を確認できませんでした。通信状態を確認し、もう一度お試しください。');
     } finally {
       issuingCashInvoice = false;
       const currentButton = currentRoot?.querySelector<HTMLButtonElement>('#btn-cash-invoice');
