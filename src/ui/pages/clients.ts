@@ -1,3 +1,4 @@
+import { compareCustomerNumbers, customerSortOptions, type CustomerSort } from '@/utils/customerSort';
 import { matchCustomerNumbers, readCustomerNumberWorkbook, readCustomerNumbers } from '@/utils/customerNumbers';
 import { store, newId } from '@/store';
 import type { Client, ClientEvent, ClientEventType, ClientStatus, CopayRatio, Invoice, PaymentMethod } from '@/types';
@@ -16,6 +17,7 @@ import { navigate } from '@/ui/router';
 
 type Mode = 'list' | 'history';
 let mode: Mode = 'list';
+let customerSort: CustomerSort = 'default';
 let currentRoot: HTMLElement | null = null;
 
 // 他画面(月次利用入力など)から特定の利用者の編集画面をすぐ開きたいときに使う、
@@ -67,13 +69,13 @@ export function renderClientsPage(root: HTMLElement) {
 // ==================== 利用者一覧タブ ====================
 
 function renderListSection(section: HTMLElement) {
-  const clients = [...store.getState().clients].sort((a, b) => a.kana.localeCompare(b.kana, 'ja'));
+  const clients = [...store.getState().clients].sort((a, b) => compareCustomerNumbers(a, b, customerSort) || a.kana.localeCompare(b.kana, 'ja'));
   const invoices = store.getState().invoices;
 
   section.innerHTML = `
     <div class="toolbar">
       <div class="page-subtitle">利用者(ご契約者)の基本情報を登録します。請求は全利用者共通で3月・7月・11月に区切って発行されます。</div>
-      <div class="toolbar-controls"><button class="btn" id="btn-customer-numbers">顧客番号を取り込む</button><button class="btn btn-primary" id="btn-add">＋ 利用者を追加</button></div>
+      <div class="toolbar-controls"><label>並び順 <select id="client-customer-sort">${customerSortOptions(customerSort, 'フリガナ順')}</select></label><button class="btn" id="btn-customer-numbers">顧客番号を取り込む</button><button class="btn btn-primary" id="btn-add">＋ 利用者を追加</button></div>
     </div>
     <div class="card">
       <table class="data-table">
@@ -102,6 +104,10 @@ function renderListSection(section: HTMLElement) {
     </div>
   `;
 
+  section.querySelector('#client-customer-sort')?.addEventListener('change', (event) => {
+    customerSort = (event.target as HTMLSelectElement).value as CustomerSort;
+    renderListSection(section);
+  });
   section.querySelector('#btn-customer-numbers')?.addEventListener('click', openCustomerNumberImport);
   section.querySelector('#btn-add')?.addEventListener('click', () => openClientModal());
 

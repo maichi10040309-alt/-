@@ -1,3 +1,4 @@
+import { compareCustomerNumbers, customerSortOptions, type CustomerSort } from '@/utils/customerSort';
 import { isSealDataUrl } from '@/utils/companySeal';
 import { isEarlyInvoice, invoiceIssueDate, invoiceDisplayMonths } from '@/utils/invoiceSchedule';
 import { invoiceDebitDates } from '@/utils/debitDate';
@@ -34,6 +35,7 @@ const BILLING_TYPE_LABELS: Record<BillingType, string> = {
 };
 
 let referenceMonth = currentYearMonth();
+let invoiceCustomerSort: CustomerSort = 'default';
 const selectedInvoiceIds = new Set<string>();
 const attemptedDraftIds = new Set<string>();
 let issuingExistingDrafts = false;
@@ -145,6 +147,13 @@ type DueRow = {
 export function renderInvoicesPage(root: HTMLElement) {
   const { clients, usageEntries, invoices, lateAdjustments, items } = store.getState();
 
+  const clientsById = new Map(clients.map((client) => [client.id, client]));
+  const compareRows = (a: { clientId: string }, b: { clientId: string }) =>
+    compareCustomerNumbers(clientsById.get(a.clientId), clientsById.get(b.clientId), invoiceCustomerSort);
+  const compareClients = (a: Client, b: Client) =>
+    compareCustomerNumbers(a, b, invoiceCustomerSort) || a.kana.localeCompare(b.kana, 'ja');
+  const compareDueRows = (a: DueRow, b: DueRow) => compareRows(a, b) || a.cycleEndMonth.localeCompare(b.cycleEndMonth);
+  const compareInvoices = (a: Invoice, b: Invoice) => compareRows(a, b) || b.createdAt.localeCompare(a.createdAt);
   const allDueRows: DueRow[] = [];
 
   for (const client of clients) {
@@ -170,10 +179,10 @@ export function renderInvoicesPage(root: HTMLElement) {
   // 例: 7〜10月分は11月が請求月なので、基準月=11月の間だけ今回分として表示され、
   // 12月になる(基準月を進める)と「過去の未請求分」に回る。
   const isCurrent = (r: DueRow) => addMonths(r.cycleEndMonth, 1) === referenceMonth;
-  const dueRows = allDueRows.filter(isCurrent).sort((a, b) => a.cycleEndMonth.localeCompare(b.cycleEndMonth));
-  const pastDueRows = allDueRows.filter((r) => !isCurrent(r)).sort((a, b) => a.cycleEndMonth.localeCompare(b.cycleEndMonth));
+  const dueRows = allDueRows.filter(isCurrent).sort(compareDueRows);
+  const pastDueRows = allDueRows.filter((r) => !isCurrent(r)).sort(compareDueRows);
 
-  const sortedInvoices = [...invoices].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const sortedInvoices = [...invoices].sort(compareInvoices);
   const invoiceIds = new Set(invoices.map((invoice) => invoice.id));
   for (const id of selectedInvoiceIds) if (!invoiceIds.has(id)) selectedInvoiceIds.delete(id);
   // 保存通知で再描画されても、移行を重複実行しない。
@@ -186,6 +195,7 @@ export function renderInvoicesPage(root: HTMLElement) {
         基準月が請求月に達したサイクルが「請求対象」に表示されます。保険分・自費分は別々の請求書として作成されます。
       </div>
       <div class="toolbar-controls">
+        <label>並び順 <select id="invoice-customer-sort">${customerSortOptions(invoiceCustomerSort, '従来の順番')}</select></label>
         <label>基準月</label>
         <input type="month" id="f-reference" value="${referenceMonth}" />
       </div>
@@ -215,7 +225,7 @@ export function renderInvoicesPage(root: HTMLElement) {
                     (r, idx) => `
               <tr>
                 <td><input type="checkbox" class="js-due-check" data-index="${idx}" /></td>
-                <td>${escapeHtml(r.clientName)}</td>
+                <td>${customerNumberLabel(clientsById.get(r.clientId))}${escapeHtml(r.clientName)}</td>
                 <td>${BILLING_TYPE_LABELS[r.category]}</td>
                 <td>${formatYmJapanese(r.cycleStartMonth)} 〜 ${formatYmJapanese(r.cycleEndMonth)}</td>
                 <td class="actions-cell">
@@ -243,7 +253,7 @@ export function renderInvoicesPage(root: HTMLElement) {
                 ? `<tr class="empty-row"><td colspan="2">利用者が登録されていません。</td></tr>`
                 : [...clients]
                     .filter((c) => !dueRows.some((r) => r.clientId === c.id) && !pastDueRows.some((r) => r.clientId === c.id))
-                    .sort((a, b) => a.kana.localeCompare(b.kana, 'ja'))
+                    .sort(compareClients)
                     .map(
                       (c) => `
                 <tr>
@@ -291,7 +301,7 @@ export function renderInvoicesPage(root: HTMLElement) {
                       (r, idx) => `
               <tr>
                 <td><input type="checkbox" class="js-due-check-past" data-index="${idx}" /></td>
-                <td>${escapeHtml(r.clientName)}</td>
+                <td>${customerNumberLabel(clientsById.get(r.clientId))}${escapeHtml(r.clientName)}</td>
                 <td>${BILLING_TYPE_LABELS[r.category]}</td>
                 <td>${formatYmJapanese(r.cycleStartMonth)} 〜 ${formatYmJapanese(r.cycleEndMonth)}</td>
                 <td class="actions-cell">
@@ -318,7 +328,7 @@ export function renderInvoicesPage(root: HTMLElement) {
           <select id="f-early-client">
             <option value="">選択してください</option>
             ${clients.filter((client) => client.paymentMethod !== 'cash')
-              .sort((a, b) => a.kana.localeCompare(b.kana, 'ja'))
+              .sort(compareClients)
               .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
               .join('')}
           </select>
@@ -367,7 +377,7 @@ export function renderInvoicesPage(root: HTMLElement) {
             lateAdjustments.length === 0
               ? `<tr class="empty-row"><td colspan="9">調整はまだありません。</td></tr>`
               : [...lateAdjustments]
-                  .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                  .sort((a, b) => compareRows(a, b) || b.createdAt.localeCompare(a.createdAt))
                   .map((a) => adjustmentRowHtml(a, clients, invoices))
                   .join('')
           }
@@ -410,6 +420,10 @@ export function renderInvoicesPage(root: HTMLElement) {
     </div>
   `;
 
+  root.querySelector('#invoice-customer-sort')?.addEventListener('change', (event) => {
+    invoiceCustomerSort = (event.target as HTMLSelectElement).value as CustomerSort;
+    renderInvoicesPage(root);
+  });
   root.querySelector('#f-reference')?.addEventListener('change', (e) => {
     const v = (e.target as HTMLInputElement).value;
     if (v) {
@@ -618,7 +632,7 @@ export function renderInvoicesPage(root: HTMLElement) {
   });
   for (const mode of printModes) {
     root.querySelector(`#btn-print-${mode}`)?.addEventListener('click', async () => {
-      const current = [...store.getState().invoices].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const current = [...store.getState().invoices].sort(compareInvoices);
       const targets = invoicesForPrinting(current, mode);
       if (!targets.length) {
         await showAlert('印刷対象の請求書がありません。');
@@ -660,7 +674,7 @@ function adjustmentRowHtml(a: LateAdjustment, clients: Client[], invoices: Invoi
   );
   return `
     <tr>
-      <td>${escapeHtml(client?.name ?? '(削除済み)')}</td>
+      <td>${customerNumberLabel(client)}${escapeHtml(client?.name ?? '(削除済み)')}</td>
       <td>${BILLING_TYPE_LABELS[a.billingType]}</td>
       <td>${formatYmJapanese(a.originalYearMonth)}</td>
       <td>${formatYmJapanese(a.billedYearMonth)}</td>
@@ -804,6 +818,10 @@ function openAdjustmentModal(clients: Client[], existing?: LateAdjustment) {
   });
 }
 
+function customerNumberLabel(client?: Client): string {
+  return client?.customerNumber ? `<span class="badge badge-muted" style="margin-right:6px">${escapeHtml(client.customerNumber)}</span>` : '';
+}
+
 function invoiceCategoryLabel(inv: Invoice): string {
   return inv.cycleStartMonth === inv.cycleEndMonth && inv.billingCategory === 'combined'
     ? '都度現金'
@@ -824,7 +842,7 @@ function invoiceRowHtml(inv: Invoice): string {
     <tr>
       <td><input type="checkbox" class="js-invoice-check" data-id="${escapeHtml(inv.id)}" aria-label="${escapeHtml(client?.name ?? '削除済み利用者')}の${invoiceCategoryLabel(inv)}請求書を選択" ${selectedInvoiceIds.has(inv.id) ? 'checked' : ''} ${inv.status !== 'issued' || inv.totalAmount === 0 ? 'disabled' : ''} /></td>
       <td>${inv.invoiceNo ? escapeHtml(inv.invoiceNo) : '-'}</td>
-      <td>${escapeHtml(client?.name ?? '(削除済み)')}</td>
+      <td>${customerNumberLabel(client)}${escapeHtml(client?.name ?? '(削除済み)')}</td>
       <td>${invoiceCategoryLabel(inv)}</td>
       <td>${formatYmJapanese(inv.cycleStartMonth)}${inv.cycleStartMonth !== inv.cycleEndMonth ? ` 〜 ${formatYmJapanese(inv.cycleEndMonth)}` : '分'}</td>
       <td class="num">${formatYen(inv.totalAmount)}</td>
