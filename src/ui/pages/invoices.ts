@@ -907,7 +907,7 @@ function invoiceSheetHtml(invoice: Invoice): string {
         <thead>
           <tr>
             <th></th>
-            <th>${privateOnly ? '自費' : invoice.billingCategory === 'combined' ? '区分' : '負担割合'}</th>
+            <th>負担割合</th>
             <th class="num">非課税分</th>
             <th class="num">課税分</th>
             <th class="num">月別合計金額</th>
