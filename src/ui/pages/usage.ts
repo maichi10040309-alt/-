@@ -1,3 +1,4 @@
+import { openSedinaExport } from '@/ui/pages/sedinaExport';
 import { buildInvoiceMonths } from '@/utils/billing';
 import { store, newId } from '@/store';
 import type { Invoice, TaxCategory, UsageEntry } from '@/types';
@@ -104,6 +105,7 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
         </div>
       </div>
       <div style="margin-bottom:12px">
+        <button class="btn btn-sm" id="btn-export-sedina">セディナ管理表へ4か月分を転記</button>
         <button class="btn btn-sm" id="btn-export-usage">表示中の${listMonthCount === 4 ? '4か月' : '1か月'}分をExcel出力</button>
       </div>
       <p id="list-summary" style="font-size:13px;margin:0 0 10px"></p>
@@ -147,6 +149,7 @@ function renderListSection(section: HTMLElement, clients: ReturnType<typeof stor
     renderListSection(section, clients);
   });
 
+  section.querySelector('#btn-export-sedina')?.addEventListener('click', () => openSedinaExport(selectedMonth));
   section.querySelector('#btn-export-usage')?.addEventListener('click', async () => {
     const button = section.querySelector('#btn-export-usage') as HTMLButtonElement;
     button.disabled = true;
