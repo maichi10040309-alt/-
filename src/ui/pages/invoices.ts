@@ -910,6 +910,8 @@ function invoiceSheetHtml(invoice: Invoice): string {
             </div>
             ${isSealDataUrl(company.sealDataUrl) ? `<img class="inv-company-seal" src="${company.sealDataUrl}" alt="社印" />` : ''}
           </div>
+          ${company.phone.trim() ? `<div>TEL: ${escapeHtml(company.phone.trim())}</div>` : ''}
+          ${company.fax.trim() ? `<div>FAX: ${escapeHtml(company.fax.trim())}</div>` : ''}
         </div>
       </div>
 

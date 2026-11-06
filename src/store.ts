@@ -1,4 +1,4 @@
-import { decodeCompanyExtras, encodeCompanyExtras } from '@/utils/companySeal';
+import { decodeCompanyExtras, encodeCompanyExtras, isSealDataUrl } from '@/utils/companySeal';
 import { isEarlyInvoice, invoiceDisplayMonths, invoiceIssueDate } from '@/utils/invoiceSchedule';
 import type {
   AppState,
@@ -622,24 +622,50 @@ class Store {
   }
 
   // ---- Company settings ----
-  updateCompany(company: AppState['company']): Promise<boolean> {
-    this.state.company = company;
-    this.notify();
-    return this.trackWrite(
-      this.runWrite(
-        supabase
-          .from('company_settings')
-          .update({
-            company_name: company.companyName,
-            address: company.address,
-            phone: company.phone,
-            fax: company.fax,
-            bank_info: encodeCompanyExtras(company),
-          })
-          .eq('id', 1),
-        'company update failed'
-      )
-    );
+  updateCompany(company: Omit<CompanySettings, 'sealDataUrl' | 'bankInfo'> & { bankInfo?: string }): Promise<boolean> {
+    return this.saveCompanySettings({
+      company_name: company.companyName,
+      address: company.address,
+      phone: company.phone,
+      fax: company.fax,
+    }, company.bankInfo);
+  }
+
+  updateCompanySeal(sealDataUrl: string): Promise<boolean> {
+    if (sealDataUrl !== '' && !isSealDataUrl(sealDataUrl)) return Promise.resolve(false);
+    return this.saveCompanySettings({}, undefined, sealDataUrl);
+  }
+
+  private saveCompanySettings(fields: Record<string, string>, bankInfo?: string, sealDataUrl?: string): Promise<boolean> {
+    return this.trackWrite((async () => {
+      try {
+        // 振込先と社印は同じ列にある。変更する方だけを最新の保存値に反映する。
+        if (bankInfo !== undefined || sealDataUrl !== undefined) {
+          const current = await supabase.from('company_settings').select('bank_info').eq('id', 1).single();
+          if (current.error) throw current.error;
+          const extras = decodeCompanyExtras(current.data.bank_info);
+          fields.bank_info = encodeCompanyExtras({
+            bankInfo: bankInfo ?? extras.bankInfo,
+            sealDataUrl: sealDataUrl ?? extras.sealDataUrl,
+          });
+        }
+        const saved = await supabase.from('company_settings').update(fields).eq('id', 1)
+          .select('company_name,address,phone,fax,bank_info').single();
+        if (saved.error) throw saved.error;
+        this.state.company = {
+          companyName: saved.data.company_name,
+          address: saved.data.address,
+          phone: saved.data.phone,
+          fax: saved.data.fax,
+          ...decodeCompanyExtras(saved.data.bank_info),
+        };
+        this.notify();
+        return true;
+      } catch (error) {
+        console.error('company update failed', error);
+        return false;
+      }
+    })());
   }
 
   nextInvoiceNo(): string {
