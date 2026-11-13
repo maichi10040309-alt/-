@@ -17,6 +17,7 @@ export function invoiceIssueDate(invoice: Invoice): string {
 }
 
 export function invoiceCoversMonth(invoice: Invoice, month: string): boolean {
+  if (invoice.months.some((entry) => entry.yearMonth === month && entry.endingRemoved)) return false;
   return (invoice.cycleStartMonth <= month && month <= invoice.cycleEndMonth) ||
     invoice.months.some((entry) => entry.yearMonth === month && !!entry.endingCharge);
 }
@@ -30,5 +31,5 @@ export function invoiceDisplayMonths(invoice: Invoice): InvoiceMonth[] {
       yearMonth: month, lines: [], subtotal: 0, nonTaxableSubtotal: 0, taxableSubtotal: 0, note: '',
     });
   }
-  return [...months, ...invoice.months.filter((entry) => entry.endingCharge && entry.yearMonth > invoice.cycleEndMonth)];
+  return [...months, ...invoice.months.filter((entry) => (entry.endingCharge || entry.endingRemoved) && entry.yearMonth > invoice.cycleEndMonth)];
 }

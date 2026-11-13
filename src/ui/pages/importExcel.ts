@@ -289,7 +289,7 @@ async function commitImport(
     const invoices = current.invoices.filter((invoice) =>
       invoice.clientId === clientId &&
       invoiceCoversMonth(invoice, targetMonth) &&
-      !invoice.months.some((month) => month.yearMonth === targetMonth && month.endingBilledPreviously)
+      !invoice.months.some((month) => month.yearMonth === targetMonth && (month.endingBilledPreviously || month.endingRemoved))
     );
     for (const invoice of invoices) {
       if (!(await store.saveInvoice(refreshInvoiceMonth(invoice, targetMonth, entries, current.items)))) return false;

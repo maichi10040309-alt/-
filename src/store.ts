@@ -552,7 +552,7 @@ class Store {
     );
   }
 
-  appendInvoiceEndingMonth(current: Invoice, updated: Invoice): Promise<boolean> {
+  updateInvoiceEndingMonth(current: Invoice, updated: Invoice): Promise<boolean> {
     if (current.paidDate || this.pendingWrites > 0 || this.deletingInvoiceIds.has(current.id)) return Promise.resolve(false);
     return this.trackWrite((async () => {
       const row = invoiceToDb(updated);

@@ -194,7 +194,7 @@ export function refreshInvoiceMonth(
 ): Invoice {
   const categories = new Map(items.map((item) => [item.id, item.billingType]));
   const existing = invoice.months.find((month) => month.yearMonth === yearMonth);
-  if (existing?.endingBilledPreviously) return invoice;
+  if (existing?.endingBilledPreviously || existing?.endingRemoved) return invoice;
   const lines = endingLines(entries.filter((entry) =>
     entry.clientId === invoice.clientId && entry.yearMonth === yearMonth &&
     (invoice.billingCategory === 'combined' ||

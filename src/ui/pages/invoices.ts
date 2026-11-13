@@ -891,7 +891,7 @@ function invoiceSheetHtml(invoice: Invoice): string {
   const company = store.getState().company;
 
   const early = isEarlyInvoice(invoice);
-  const displayMonths = invoiceDisplayMonths(invoice);
+  const displayMonths = invoiceDisplayMonths(invoice).filter((month) => !month.endingRemoved);
   const issueDate = invoiceIssueDate(invoice);
   const debitDates = invoiceDebitDates(invoice);
   const issueDateLabel = formatDateJapanese(issueDate);
@@ -993,7 +993,7 @@ function invoiceSheetHtml(invoice: Invoice): string {
 
       <details class="inv-detail-toggle no-print">
         <summary>品目明細を表示(社内確認用・印刷されません)</summary>
-        ${invoice.months.map(monthDetailBlockHtml).join('')}
+        ${invoice.months.filter((month) => !month.endingRemoved).map(monthDetailBlockHtml).join('')}
         ${invoice.adjustments.length > 0 ? adjustmentsDetailBlockHtml(invoice.adjustments) : ''}
       </details>
     </div>
@@ -1025,7 +1025,8 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       }
       ${early ? `<label style="align-self:center">発行日 <input type="date" id="f-issued-date" value="${issueDate}" required /></label>` : ''}
       ${!invoice.months.some((month) => month.endingCharge)
-        ? '<button class="btn" id="btn-append-ending">終了月分を追加</button>' : ''}
+        ? '<button class="btn" id="btn-append-ending">終了月分を追加</button>'
+        : '<button class="btn" id="btn-remove-ending">終了月分を取り消す</button>'}
       <button class="btn btn-danger" id="btn-delete-invoice">請求書を削除</button>
       <button class="btn" id="btn-print" ${invoice.totalAmount === 0 ? 'disabled' : ''}>🖨 印刷</button>
     </div>
@@ -1048,6 +1049,44 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
     if (!saved) await showAlert('発行日の保存に失敗しました。再度お試しください。');
   });
   root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
+  root.querySelector('#btn-remove-ending')?.addEventListener('click', async () => {
+    if (addingEndingMonth.has(invoiceId)) return;
+    addingEndingMonth.add(invoiceId);
+    try {
+      const current = await store.fetchInvoiceById(invoiceId);
+      const ending = current?.months.find((month) => month.endingCharge);
+      if (!current || !ending) {
+        store.refreshNow();
+        return;
+      }
+      if (current.paidDate) {
+        await showAlert('入金済みの請求書は金額を変更できません。');
+        return;
+      }
+      if (!await showConfirm(`${formatYmJapanese(ending.yearMonth)}の終了月分（${formatYen(ending.subtotal)}）を取り消しますか？`)) return;
+      const latest = await store.fetchInvoiceById(invoiceId);
+      if (!latest || JSON.stringify(latest) !== JSON.stringify(current) ||
+          !await store.updateInvoiceEndingMonth(current, {
+            ...current,
+            months: current.months.flatMap((month) => month !== ending ? [month] :
+              month.yearMonth > current.cycleEndMonth ? [] : [{
+                yearMonth: month.yearMonth, lines: [], note: '', endingRemoved: true,
+                subtotal: 0, nonTaxableSubtotal: 0, taxableSubtotal: 0,
+              }]),
+            totalAmount: current.totalAmount - ending.subtotal,
+            nonTaxableTotal: current.nonTaxableTotal - ending.nonTaxableSubtotal,
+            taxableTotal: current.taxableTotal - ending.taxableSubtotal,
+          })) {
+        store.refreshNow();
+        await showAlert('終了月分を取り消せませんでした。最新の請求書を確認してください。');
+      }
+    } catch (error) {
+      console.error(error);
+      await showAlert('請求書を確認できませんでした。通信状態を確認してください。');
+    } finally {
+      addingEndingMonth.delete(invoiceId);
+    }
+  });
   root.querySelector('#btn-append-ending')?.addEventListener('click', async () => {
     if (addingEndingMonth.has(invoiceId)) return;
     addingEndingMonth.add(invoiceId);
@@ -1061,7 +1100,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
         await showAlert('入金済みの請求書は金額を変更できません。入金状況を確認し、必要に応じて「未入金に戻す」から変更してください。');
         return;
       }
-      const month = addMonths(current.cycleEndMonth, 1);
+      const month = current.months.find((row) => row.endingRemoved)?.yearMonth ?? addMonths(current.cycleEndMonth, 1);
       const preview = (ending?: EndingSelection) => {
         if (!ending) return current;
         const { usageEntries, items } = store.getState();
@@ -1072,7 +1111,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
           endingCharge: ending.charge, endingMonth: month,
         }).months[0];
         return {
-          ...current, months: [...invoiceDisplayMonths(current), extra],
+          ...current, months: [...invoiceDisplayMonths(current).filter((row) => row.yearMonth !== month), extra],
           totalAmount: current.totalAmount + extra.subtotal,
           nonTaxableTotal: current.nonTaxableTotal + extra.nonTaxableSubtotal,
           taxableTotal: current.taxableTotal + extra.taxableSubtotal,
@@ -1094,7 +1133,7 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
       if (!latest || JSON.stringify(latest) !== JSON.stringify(current) ||
           JSON.stringify(preview(ending)) !== JSON.stringify(updated) ||
           !updated.months.find((entry) => entry.endingCharge)?.subtotal ||
-          !await store.appendInvoiceEndingMonth(current, updated)) {
+          !await store.updateInvoiceEndingMonth(current, updated)) {
         store.refreshNow();
         await showAlert('終了月分を追加できませんでした。最新の請求内容を確認して、もう一度お試しください。');
       }
@@ -1163,7 +1202,7 @@ function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel:
   const { month: monthNumber } = parseYearMonth(month.yearMonth);
   return `
     <tr>
-      <td>${monthNumber}月分レンタル料${month.endingCharge ? `（終了・${month.endingCharge === 'half' ? '半月' : '1か月'}）` : ''}</td>
+      <td>${monthNumber}月分レンタル料</td>
       <td>${ratioLabel}</td>
       <td class="num">${formatYen(month.nonTaxableSubtotal)}</td>
       <td class="num">${formatYen(month.taxableSubtotal)}</td>
