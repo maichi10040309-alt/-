@@ -11,6 +11,7 @@ export function chooseEndingCharge(
   title: string,
   endMonths: string[],
   preview: (ending?: EndingSelection) => Details,
+  appendOnly = false,
 ): Promise<EndingSelection | false | undefined> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -20,7 +21,7 @@ export function chooseEndingCharge(
         <h3 class="modal-title">${escapeHtml(title)}</h3>
         <div class="form-grid">
           <div class="form-field"><label for="ending-charge">終了月分の追加</label>
-            <select id="ending-charge"><option value="">追加しない</option><option value="full">1か月分</option><option value="half">半月分</option></select>
+            <select id="ending-charge">${appendOnly ? '' : '<option value="">追加しない</option>'}<option value="full">1か月分</option><option value="half">半月分</option></select>
           </div>
           <div class="form-field"><label for="ending-month">終了月</label>
             <select id="ending-month">${endMonths.map((month) => `<option value="${escapeHtml(month)}">${formatYmJapanese(month)}</option>`).join('')}</select>
@@ -30,7 +31,7 @@ export function chooseEndingCharge(
         <p data-preview role="status"></p>
         <div class="form-actions">
           <button type="button" class="btn" data-cancel>キャンセル</button>
-          <button class="btn btn-primary" type="submit">請求書を発行</button>
+          <button class="btn btn-primary" type="submit">${appendOnly ? '終了月分を追加' : '請求書を発行'}</button>
         </div>
       </form>`;
     document.body.appendChild(overlay);

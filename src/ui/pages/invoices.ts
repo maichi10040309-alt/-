@@ -1000,6 +1000,8 @@ function invoiceSheetHtml(invoice: Invoice): string {
   `;
 }
 
+const addingEndingMonth = new Set<string>();
+
 export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
   const invoice = store.getState().invoices.find((i) => i.id === invoiceId);
   if (!invoice) {
@@ -1022,6 +1024,8 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
           : `<button class="btn btn-primary" id="btn-paid">入金済みにする</button>`
       }
       ${early ? `<label style="align-self:center">発行日 <input type="date" id="f-issued-date" value="${issueDate}" required /></label>` : ''}
+      ${!invoice.months.some((month) => month.endingCharge)
+        ? '<button class="btn" id="btn-append-ending">終了月分を追加</button>' : ''}
       <button class="btn btn-danger" id="btn-delete-invoice">請求書を削除</button>
       <button class="btn" id="btn-print" ${invoice.totalAmount === 0 ? 'disabled' : ''}>🖨 印刷</button>
     </div>
@@ -1044,6 +1048,63 @@ export function renderInvoiceDetailPage(root: HTMLElement, invoiceId: string) {
     if (!saved) await showAlert('発行日の保存に失敗しました。再度お試しください。');
   });
   root.querySelector('#btn-back')?.addEventListener('click', () => navigate('invoices'));
+  root.querySelector('#btn-append-ending')?.addEventListener('click', async () => {
+    if (addingEndingMonth.has(invoiceId)) return;
+    addingEndingMonth.add(invoiceId);
+    try {
+      const current = await store.fetchInvoiceById(invoiceId);
+      if (!current || current.months.some((month) => month.endingCharge)) {
+        await showAlert('請求書が更新されました。再読み込みして確認してください。');
+        return;
+      }
+      if (current.paidDate) {
+        await showAlert('入金済みの請求書は金額を変更できません。入金状況を確認し、必要に応じて「未入金に戻す」から変更してください。');
+        return;
+      }
+      const month = addMonths(current.cycleEndMonth, 1);
+      const preview = (ending?: EndingSelection) => {
+        if (!ending) return current;
+        const { usageEntries, items } = store.getState();
+        const extra = buildInvoiceMonths({
+          clientId: current.clientId, cycleStartMonth: month, cycleEndMonth: month, months: [month],
+          isDue: true, insuranceInvoice: null, privateInvoice: null, combinedInvoice: null,
+        }, usageEntries, [], items, current.billingCategory, {
+          endingCharge: ending.charge, endingMonth: month,
+        }).months[0];
+        return {
+          ...current, months: [...invoiceDisplayMonths(current), extra],
+          totalAmount: current.totalAmount + extra.subtotal,
+          nonTaxableTotal: current.nonTaxableTotal + extra.nonTaxableSubtotal,
+          taxableTotal: current.taxableTotal + extra.taxableSubtotal,
+        };
+      };
+      const ending = await chooseEndingCharge('作成済みの請求書に終了月分を追加', [month], preview, true);
+      if (!ending) return;
+      const updated = preview(ending);
+      const [existing, latest] = await Promise.all([
+        store.fetchBillableInvoicesForMonth(current.clientId, month),
+        store.fetchInvoiceById(invoiceId),
+      ]);
+      if (existing.some((entry) => entry.id !== current.id &&
+          (current.billingCategory === 'combined' || entry.billingCategory === 'combined' ||
+            entry.billingCategory === current.billingCategory))) {
+        await showAlert('終了月を含む請求書が発行済みのため、追加できません。');
+        return;
+      }
+      if (!latest || JSON.stringify(latest) !== JSON.stringify(current) ||
+          JSON.stringify(preview(ending)) !== JSON.stringify(updated) ||
+          !updated.months.find((entry) => entry.endingCharge)?.subtotal ||
+          !await store.appendInvoiceEndingMonth(current, updated)) {
+        store.refreshNow();
+        await showAlert('終了月分を追加できませんでした。最新の請求内容を確認して、もう一度お試しください。');
+      }
+    } catch (error) {
+      console.error(error);
+      await showAlert('請求書を確認できませんでした。通信状態を確認してください。');
+    } finally {
+      addingEndingMonth.delete(invoiceId);
+    }
+  });
   root.querySelector('#btn-delete-invoice')?.addEventListener('click', async (event) => {
     const button = event.currentTarget as HTMLButtonElement;
     const current = store.getState().invoices.find((entry) => entry.id === invoiceId);

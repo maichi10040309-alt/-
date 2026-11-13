@@ -552,6 +552,29 @@ class Store {
     );
   }
 
+  appendInvoiceEndingMonth(current: Invoice, updated: Invoice): Promise<boolean> {
+    if (current.paidDate || this.pendingWrites > 0 || this.deletingInvoiceIds.has(current.id)) return Promise.resolve(false);
+    return this.trackWrite((async () => {
+      const row = invoiceToDb(updated);
+      const saved = await this.runWrite(supabase.from('invoices').update({
+        months: row.months, total_amount: row.total_amount,
+        non_taxable_total: row.non_taxable_total, taxable_total: row.taxable_total,
+      }).eq('id', current.id).is('paid_date', null).eq('total_amount', current.totalAmount)
+        .select('id').single(), 'invoice ending charge update failed');
+      if (saved) {
+        this.state.invoices = this.state.invoices.map((entry) => entry.id === current.id ? updated : entry);
+        this.notify();
+      }
+      return saved;
+    })());
+  }
+
+  async fetchInvoiceById(id: string): Promise<Invoice | null> {
+    const { data, error } = await supabase.from('invoices').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data ? invoiceFromDb(data) : null;
+  }
+
   async fetchBillableInvoicesForMonth(clientId: string, month: string): Promise<Invoice[]> {
     const { data, error } = await supabase.from('invoices').select('*')
       .eq('client_id', clientId).lte('cycle_start_month', month).gte('cycle_end_month', addMonths(month, -1))
