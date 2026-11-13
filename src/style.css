@@ -566,7 +566,8 @@ table.data-table {
 }
 
 .inv-bank {
-  margin-top: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.7;
 }
@@ -741,10 +742,16 @@ table.data-table {
 .inv-table th:last-child { width: 16%; text-align: center; }
 .inv-table th, .inv-table td { padding: 3mm 1.5mm; overflow-wrap: anywhere; }
 .inv-table .num { text-align: right; }
-.inv-debit-dates {
+.inv-payment-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8mm;
   margin-top: auto;
   padding-top: 12mm;
-  align-self: flex-end;
+}
+.inv-debit-dates {
+  margin-left: auto;
   font-size: 14px;
   line-height: 2;
 }
@@ -765,7 +772,7 @@ table.data-table {
   }
   .inv-header-row { flex-wrap: nowrap; align-items: flex-start; }
   .inv-meta { max-width: 48%; overflow-wrap: anywhere; }
-  .inv-table tr, .inv-debit-dates { break-inside: avoid; }
+  .inv-table tr, .inv-payment-row { break-inside: avoid; }
   .inv-note-input { color: #111; }
 }
 
@@ -777,7 +784,7 @@ table.data-table {
 @media print { .inv-note-print { display: inline; } }
 
 .invoice-sheet > .inv-footer { margin-top: auto; padding-top: 6mm; }
-.invoice-sheet > .inv-debit-dates + .inv-footer { margin-top: 6mm; padding-top: 0; }
+.invoice-sheet > .inv-payment-row + .inv-footer { margin-top: 6mm; padding-top: 0; }
 
 /* 一括印刷は画面の一覧を維持し、印刷時だけ専用の紙面を表示する。 */
 #invoice-batch-print { position: absolute; left: -100000px; top: 0; width: 186mm; }

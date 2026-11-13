@@ -933,7 +933,6 @@ function invoiceSheetHtml(invoice: Invoice): string {
       <div class="inv-header-row">
         <div class="inv-recipient">
           <div class="inv-client-line">${escapeHtml(client?.name ?? '')}<span class="inv-sama">様</span></div>
-          ${company.bankInfo.trim() ? `<div class="inv-bank"><div class="inv-bank-details">${escapeHtml(company.bankInfo.trim())}</div></div>` : ''}
         </div>
         <div class="inv-meta">
           <div>発行日: ${issueDateLabel}</div>
@@ -982,10 +981,13 @@ function invoiceSheetHtml(invoice: Invoice): string {
         </tbody>
       </table>
 
+      ${company.bankInfo.trim() || !early ? `<div class="inv-payment-row">
+          ${company.bankInfo.trim() ? `<div class="inv-bank"><div class="inv-bank-details">${escapeHtml(company.bankInfo.trim())}</div></div>` : ''}
       ${early ? '' : `<div class="inv-debit-dates">
         <div><span>引落日</span><strong>${formatDateJapanese(debitDates.current)}</strong></div>
         <div><span>次回引落日</span><strong>${formatDateJapanese(debitDates.next)}</strong></div>
       </div>`}
+      </div>` : ''}
       <p class="inv-footer">ご不明な点等ございましたら、ご連絡頂きますようお願い致します。</p>
 
       <details class="inv-detail-toggle no-print">
