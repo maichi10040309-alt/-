@@ -932,7 +932,7 @@ function invoiceSheetHtml(invoice: Invoice): string {
 
   return `
     <div class="invoice-sheet" id="invoice-sheet">
-      <h2 class="inv-title">請求書${invoice.billingCategory !== 'combined' ? `<span class="inv-category-badge no-print">(${INVOICE_BILLING_CATEGORY_LABELS[invoice.billingCategory]})</span>` : ''}</h2>
+      <h2 class="inv-title">請求書${invoice.billingCategory !== 'combined' ? `<span class="inv-category-badge">(${INVOICE_BILLING_CATEGORY_LABELS[invoice.billingCategory]})</span>` : ''}</h2>
       <div class="inv-header-row">
         <div class="inv-recipient">
           <div class="inv-client-line">${escapeHtml(client?.name ?? '')}<span class="inv-sama">様</span></div>
