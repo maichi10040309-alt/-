@@ -6,6 +6,7 @@ import { CLIENT_STATUS_LABELS, INVOICE_BILLING_CATEGORY_LABELS, TAX_CATEGORY_LAB
 import { escapeHtml, formatYen } from '@/utils/format';
 import { addMonths, currentYearMonth, formatYmJapanese, isValidYearMonth, todayIso } from '@/utils/date';
 import { openImportModal } from '@/ui/pages/importExcel';
+import { chooseEndingCharge, type EndingSelection } from '@/ui/components/endingInvoiceDialog';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { clientStatusBadge, focusClientOnNextRender } from '@/ui/pages/clients';
 import { navigate } from '@/ui/router';
@@ -480,12 +481,12 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
         if (await showConfirm(`${message}\n\n該当の請求書を開きますか？`, '発行済みの請求書')) navigate(`invoices/${existing[0].id}`);
       } else if (await showConfirm(`${message}\n\n請求書一覧を開きますか？`, '発行済みの請求書')) navigate('invoices');
     }
-    const monthlyDetails = () => {
+    const monthlyDetails = (ending?: EndingSelection) => {
       const { usageEntries, lateAdjustments, items } = store.getState();
       return buildInvoiceMonths({
         clientId, cycleStartMonth: yearMonth, cycleEndMonth: yearMonth, months: [yearMonth],
         isDue: true, insuranceInvoice: null, privateInvoice: null, combinedInvoice: null,
-      }, usageEntries, lateAdjustments, items, 'combined');
+      }, usageEntries, lateAdjustments, items, 'combined', { endingCharge: ending?.charge, endingMonth: ending?.month });
     };
     const client = store.getState().clients.find((entry) => entry.id === clientId);
     if (client?.paymentMethod !== 'cash') return;
@@ -497,20 +498,28 @@ function renderInputSection(section: HTMLElement, sortedClients: ReturnType<type
         await showExistingInvoices(existing);
         return;
       }
-      const details = monthlyDetails();
-      if (details.totalAmount === 0) {
-        await showAlert('この月の保存済み請求額は0円です。利用内容を入力し、保存してから発行してください。');
+      const ending = await chooseEndingCharge(
+        `${client.name}さんの${formatYmJapanese(yearMonth)}の都度集金請求書`,
+        [yearMonth, addMonths(yearMonth, 1)],
+        monthlyDetails,
+      );
+      if (ending === false) return;
+      const details = monthlyDetails(ending);
+      if (details.totalAmount === 0 || (ending && !details.months.find((month) => month.endingCharge)?.subtotal)) {
+        await showAlert('保存済みの請求額を確認して、もう一度操作してください。');
         return;
       }
-      if (!await showConfirm(`${client.name}さんの${formatYmJapanese(yearMonth)}分を、保存済みの金額 ${formatYen(details.totalAmount)} で発行しますか？`)) return;
       const remaining = await existingForMonth();
+      if (ending && ending.month !== yearMonth) {
+        remaining.push(...await store.fetchBillableInvoicesForMonth(clientId, ending.month));
+      }
       if (remaining.length) {
         await showExistingInvoices(remaining);
         return;
       }
       if (savingMonthlyUsage ||
           store.getState().clients.find((entry) => entry.id === clientId)?.paymentMethod !== 'cash' ||
-          JSON.stringify(monthlyDetails()) !== JSON.stringify(details)) {
+          JSON.stringify(monthlyDetails(ending)) !== JSON.stringify(details)) {
         await showAlert('請求内容が変わりました。対象月の内容を確認して、もう一度操作してください。');
         return;
       }

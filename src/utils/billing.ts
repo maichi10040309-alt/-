@@ -1,5 +1,17 @@
-import type { BillingType, Client, Invoice, InvoiceBillingCategory, LateAdjustment, RentalItem, UsageEntry, YearMonth } from '@/types';
+import type { BillingType, Client, EndingCharge, Invoice, InvoiceMonth, InvoiceBillingCategory, LateAdjustment, RentalItem, UsageEntry, YearMonth } from '@/types';
 import { addMonths, parseYearMonth, ymCompare } from '@/utils/date';
+
+export function endingChargeMonths(invoices: Invoice[], clientId: string, category: InvoiceBillingCategory): Set<string> {
+  return new Set(invoices.filter((invoice) => invoice.clientId === clientId &&
+    (category === 'combined' || invoice.billingCategory === 'combined' || invoice.billingCategory === category))
+    .flatMap((invoice) => invoice.months.filter((month) => month.endingCharge).map((month) => month.yearMonth)));
+}
+
+function endingLines(lines: InvoiceMonth['lines'], charge?: EndingCharge): InvoiceMonth['lines'] {
+  return charge === 'half' ? lines.map((line) => ({
+    ...line, quantity: line.quantity / 2, amount: Math.trunc(line.amount / 2),
+  })) : lines;
+}
 
 export const CYCLE_LENGTH = 4; // 請求は4か月ごと
 
@@ -108,22 +120,27 @@ export function buildInvoiceMonths(
   usageEntries: UsageEntry[],
   lateAdjustments: LateAdjustment[],
   items: RentalItem[],
-  category: InvoiceBillingCategory
+  category: InvoiceBillingCategory,
+  options: { endingCharge?: EndingCharge; endingMonth?: string; excludedMonths?: Set<string> } = {}
 ): Pick<Invoice, 'months' | 'adjustments' | 'totalAmount' | 'nonTaxableTotal' | 'taxableTotal'> {
   const itemBillingTypeById = new Map(items.map((i) => [i.id, i.billingType]));
   const entryCategory = (itemId: string): BillingType => itemBillingTypeById.get(itemId) ?? 'insurance';
 
-  const months: Invoice['months'] = cycle.months.map((ym) => {
-    const entries = usageEntries.filter(
+  const extraMonth = options.endingMonth ?? addMonths(cycle.cycleEndMonth, 1);
+  const baseMonths = options.endingCharge ? cycle.months.filter((month) => month < extraMonth) : cycle.months;
+  const months: Invoice['months'] = [...baseMonths, ...(options.endingCharge ? [extraMonth] : [])].map((ym) => {
+    const endingCharge = ym === extraMonth ? options.endingCharge : undefined;
+    const excluded = options.excludedMonths?.has(ym);
+    const entries = excluded ? [] : usageEntries.filter(
       (u) => u.clientId === cycle.clientId && u.yearMonth === ym && (category === 'combined' || entryCategory(u.itemId) === category)
     );
-    const lines = entries.map((e) => ({
+    const lines = endingLines(entries.map((e) => ({
       itemName: e.itemName,
       quantity: e.quantity,
       unitPrice: e.unitPrice,
       amount: e.amount,
       taxCategory: e.taxCategory,
-    }));
+    })), endingCharge);
     const subtotal = lines.reduce((sum, l) => sum + l.amount, 0);
     const nonTaxableSubtotal = lines
       .filter((l) => l.taxCategory === 'nontaxable')
@@ -131,14 +148,14 @@ export function buildInvoiceMonths(
     const taxableSubtotal = lines
       .filter((l) => l.taxCategory === 'taxable')
       .reduce((sum, l) => sum + l.amount, 0);
-    return { yearMonth: ym, lines, subtotal, nonTaxableSubtotal, taxableSubtotal, note: '' };
+    return { yearMonth: ym, lines, subtotal, nonTaxableSubtotal, taxableSubtotal, note: excluded ? '終了月分は請求済み' : '', endingCharge, endingBilledPreviously: excluded || undefined };
   });
 
   const adjustments: Invoice['adjustments'] = lateAdjustments
     .filter(
       (a) =>
         a.clientId === cycle.clientId &&
-        cycle.months.includes(a.billedYearMonth) &&
+        (baseMonths.includes(a.billedYearMonth) || (options.endingCharge && cycle.months.includes(extraMonth) && a.billedYearMonth === extraMonth)) &&
         (category === 'combined' || a.billingType === category)
     )
     .map((a) => ({
@@ -176,18 +193,20 @@ export function refreshInvoiceMonth(
   invoice: Invoice, yearMonth: YearMonth, entries: UsageEntry[], items: RentalItem[]
 ): Invoice {
   const categories = new Map(items.map((item) => [item.id, item.billingType]));
-  const lines = entries.filter((entry) =>
+  const existing = invoice.months.find((month) => month.yearMonth === yearMonth);
+  if (existing?.endingBilledPreviously) return invoice;
+  const lines = endingLines(entries.filter((entry) =>
     entry.clientId === invoice.clientId && entry.yearMonth === yearMonth &&
     (invoice.billingCategory === 'combined' ||
       (categories.get(entry.itemId) ?? 'insurance') === invoice.billingCategory)
   ).map(({ itemName, quantity, unitPrice, amount, taxCategory }) =>
-    ({ itemName, quantity, unitPrice, amount, taxCategory }));
+    ({ itemName, quantity, unitPrice, amount, taxCategory })), existing?.endingCharge);
   const sum = (tax?: string) => lines.filter((line) => !tax || line.taxCategory === tax)
     .reduce((total, line) => total + line.amount, 0);
   const replacement = {
     yearMonth, lines, subtotal: sum(), nonTaxableSubtotal: sum('nontaxable'),
     taxableSubtotal: sum('taxable'),
-    note: invoice.months.find((month) => month.yearMonth === yearMonth)?.note ?? '',
+    note: existing?.note ?? '', endingCharge: existing?.endingCharge,
   };
   const months = invoice.months.some((month) => month.yearMonth === yearMonth)
     ? invoice.months.map((month) => month.yearMonth === yearMonth ? replacement : month)

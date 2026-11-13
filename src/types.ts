@@ -109,7 +109,11 @@ export interface InvoiceMonthLine {
   taxCategory: TaxCategory;
 }
 
+export type EndingCharge = 'full' | 'half';
+
 export interface InvoiceMonth {
+  endingCharge?: EndingCharge;
+  endingBilledPreviously?: boolean;
   // 請求種別は既存のmonths JSONにも保存し、DBの列追加なしで保持する。
   billingTiming?: 'regular' | 'early';
   yearMonth: YearMonth;

@@ -6,6 +6,7 @@ import { showAlert, showConfirm } from '@/ui/components/dialog';
 import { escapeHtml, formatYen } from '@/utils/format';
 import { currentYearMonth, formatYmJapanese, isValidYearMonth } from '@/utils/date';
 import type { ImportedClient, ImportResult } from '@/utils/excelImport';
+import { invoiceCoversMonth } from '@/utils/invoiceSchedule';
 import { refreshInvoiceMonth } from '@/utils/billing';
 import { clientMatchKey, parseCareExcelWorkbook, readFileAsArrayBuffer } from '@/utils/excelImport';
 
@@ -287,7 +288,8 @@ async function commitImport(
     const current = store.getState();
     const invoices = current.invoices.filter((invoice) =>
       invoice.clientId === clientId &&
-      targetMonth >= invoice.cycleStartMonth && targetMonth <= invoice.cycleEndMonth
+      invoiceCoversMonth(invoice, targetMonth) &&
+      !invoice.months.some((month) => month.yearMonth === targetMonth && month.endingBilledPreviously)
     );
     for (const invoice of invoices) {
       if (!(await store.saveInvoice(refreshInvoiceMonth(invoice, targetMonth, entries, current.items)))) return false;

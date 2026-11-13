@@ -16,6 +16,11 @@ export function invoiceIssueDate(invoice: Invoice): string {
     : `${addMonths(invoice.cycleEndMonth, 1)}-10`;
 }
 
+export function invoiceCoversMonth(invoice: Invoice, month: string): boolean {
+  return (invoice.cycleStartMonth <= month && month <= invoice.cycleEndMonth) ||
+    invoice.months.some((entry) => entry.yearMonth === month && !!entry.endingCharge);
+}
+
 /** 過去の請求書で月が省かれていても、対象期間の全月を0円で補完して表示。 */
 export function invoiceDisplayMonths(invoice: Invoice): InvoiceMonth[] {
   const months: InvoiceMonth[] = [];
@@ -25,5 +30,5 @@ export function invoiceDisplayMonths(invoice: Invoice): InvoiceMonth[] {
       yearMonth: month, lines: [], subtotal: 0, nonTaxableSubtotal: 0, taxableSubtotal: 0, note: '',
     });
   }
-  return months;
+  return [...months, ...invoice.months.filter((entry) => entry.endingCharge && entry.yearMonth > invoice.cycleEndMonth)];
 }

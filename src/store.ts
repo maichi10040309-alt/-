@@ -1,5 +1,6 @@
+import { addMonths } from '@/utils/date';
 import { decodeCompanyExtras, encodeCompanyExtras, isSealDataUrl } from '@/utils/companySeal';
-import { isEarlyInvoice, invoiceDisplayMonths, invoiceIssueDate } from '@/utils/invoiceSchedule';
+import { isEarlyInvoice, invoiceDisplayMonths, invoiceIssueDate, invoiceCoversMonth } from '@/utils/invoiceSchedule';
 import type {
   AppState,
   BillingType,
@@ -553,10 +554,10 @@ class Store {
 
   async fetchBillableInvoicesForMonth(clientId: string, month: string): Promise<Invoice[]> {
     const { data, error } = await supabase.from('invoices').select('*')
-      .eq('client_id', clientId).lte('cycle_start_month', month).gte('cycle_end_month', month)
+      .eq('client_id', clientId).lte('cycle_start_month', month).gte('cycle_end_month', addMonths(month, -1))
       .neq('total_amount', 0);
     if (error) throw error;
-    return (data ?? []).map(invoiceFromDb);
+    return (data ?? []).map(invoiceFromDb).filter((invoice) => invoiceCoversMonth(invoice, month));
   }
 
   async deleteInvoice(id: string): Promise<boolean> {

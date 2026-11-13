@@ -16,9 +16,10 @@ import {
   parseYearMonth,
   todayIso,
 } from '@/utils/date';
-import { buildInvoiceMonths, getClientCycles, type BillingCycle } from '@/utils/billing';
+import { buildInvoiceMonths, endingChargeMonths, getClientCycles, type BillingCycle } from '@/utils/billing';
 import { navigate } from '@/ui/router';
 import { showAlert, showConfirm } from '@/ui/components/dialog';
+import { chooseEndingCharge, type EndingSelection } from '@/ui/components/endingInvoiceDialog';
 import { openModal } from '@/ui/components/modal';
 import { clientStatusBadge } from '@/ui/pages/clients';
 
@@ -95,8 +96,8 @@ async function printInvoiceBatch(invoices: Invoice[]) {
 
 /** そのサイクルの指定区分(保険/自費)に、請求すべき実績(利用実績 or 月遅れ調整)があるかどうか */
 function cycleCategoryHasData(cycle: BillingCycle, category: BillingType): boolean {
-  const { usageEntries, lateAdjustments, items } = store.getState();
-  const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments, items, category);
+  const { usageEntries, lateAdjustments, items, invoices } = store.getState();
+  const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments, items, category, { excludedMonths: endingChargeMonths(invoices, cycle.clientId, category) });
   return preview.totalAmount !== 0 && (preview.months.some((m) => m.lines.length > 0) || preview.adjustments.length > 0);
 }
 
@@ -432,6 +433,7 @@ export function renderInvoicesPage(root: HTMLElement) {
     }
   });
 
+  const issuingCycles = new Set<string>();
   async function createInvoiceForCycle(
     clientId: string,
     cycleStartMonth: string,
@@ -452,38 +454,68 @@ export function renderInvoicesPage(root: HTMLElement) {
       await showAlert('対象期間に発行済みの月次請求書があります。重複するため、4か月分の請求書は発行できません。');
       return null;
     }
-    const { months, adjustments, totalAmount, nonTaxableTotal, taxableTotal } = buildInvoiceMonths(
-      cycle,
-      usageEntries,
-      lateAdjustments,
-      items,
-      category
-    );
-    if (totalAmount === 0) return null;
-    const invoice: Invoice = {
-      id: newId(),
-      invoiceNo: store.nextInvoiceNo(),
-      clientId,
-      cycleStartMonth: cycle.cycleStartMonth,
-      cycleEndMonth: cycle.cycleEndMonth,
-      months,
-      adjustments,
-      totalAmount,
-      nonTaxableTotal,
-      taxableTotal,
-      billingCategory: category,
-      status: 'issued',
-      billingTiming,
-      issuedDate: billingTiming === 'early' ? todayIso() : `${addMonths(cycle.cycleEndMonth, 1)}-10`,
-      paidDate: null,
-      createdAt: new Date().toISOString(),
-    };
-    if (!await store.saveInvoice(invoice)) {
-      await showAlert('請求書の保存に失敗しました。通信状態を確認し、再読み込みしてください。');
+    const key = `${clientId}:${cycleStartMonth}:${category}`;
+    if (issuingCycles.has(key)) return null;
+    issuingCycles.add(key);
+    try {
+      const detailsFor = (ending?: EndingSelection) => {
+        const state = store.getState();
+        return buildInvoiceMonths(cycle, state.usageEntries, state.lateAdjustments, state.items, category, {
+          endingCharge: ending?.charge,
+          endingMonth: ending?.month,
+          excludedMonths: endingChargeMonths(state.invoices, clientId, category),
+        });
+      };
+      const nextMonth = addMonths(cycle.cycleEndMonth, 1);
+      const ending = navigateAfter ? await chooseEndingCharge(
+        `${client.name}さんの${BILLING_TYPE_LABELS[category]}の請求書`,
+        billingTiming === 'early' ? [...cycle.months, nextMonth] : [nextMonth],
+        detailsFor,
+      ) : undefined;
+      if (ending === false) return null;
+      const details = detailsFor(ending);
+      if (ending) {
+        const existing = await store.fetchBillableInvoicesForMonth(clientId, ending.month);
+        if (existing.some((invoice) => invoice.billingCategory === category || invoice.billingCategory === 'combined')) {
+          await showAlert('終了月を含む請求書が発行済みのため、追加できません。');
+          return null;
+        }
+        if (!details.months.find((month) => month.endingCharge)?.subtotal ||
+            JSON.stringify(detailsFor(ending)) !== JSON.stringify(details)) {
+          await showAlert('終了月の請求内容を確認して、もう一度操作してください。');
+          return null;
+        }
+      }
+      if (details.totalAmount === 0 || store.getState().invoices.some((invoice) =>
+        invoice.clientId === clientId && invoice.cycleStartMonth === cycleStartMonth &&
+        (invoice.billingCategory === category || invoice.billingCategory === 'combined'))) return null;
+      const invoice: Invoice = {
+        id: newId(),
+        invoiceNo: store.nextInvoiceNo(),
+        clientId,
+        cycleStartMonth: cycle.cycleStartMonth,
+        cycleEndMonth: ending && ending.month < cycle.cycleEndMonth ? ending.month : cycle.cycleEndMonth,
+        ...details,
+        billingCategory: category,
+        status: 'issued',
+        billingTiming,
+        issuedDate: billingTiming === 'early' ? todayIso() : `${addMonths(cycle.cycleEndMonth, 1)}-10`,
+        paidDate: null,
+        createdAt: new Date().toISOString(),
+      };
+      if (!await store.saveInvoice(invoice)) {
+        await showAlert('請求書の保存に失敗しました。通信状態を確認し、再読み込みしてください。');
+        return null;
+      }
+      if (navigateAfter) navigate(`invoices/${invoice.id}`);
+      return invoice;
+    } catch (error) {
+      console.error(error);
+      await showAlert('請求書を確認できませんでした。もう一度お試しください。');
       return null;
+    } finally {
+      issuingCycles.delete(key);
     }
-    if (navigateAfter) navigate(`invoices/${invoice.id}`);
-    return invoice;
   }
 
   function wireDueSection(
@@ -562,7 +594,7 @@ export function renderInvoicesPage(root: HTMLElement) {
     }
     earlyCycleRows.innerHTML = rows
       .map(({ cycle, category }) => {
-        const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments, items, category);
+        const preview = buildInvoiceMonths(cycle, usageEntries, lateAdjustments, items, category, { excludedMonths: endingChargeMonths(invoices, cycle.clientId, category) });
         const statusBadge = cycle.isDue
           ? '<span class="badge badge-warning">締め済み(通常の請求対象)</span>'
           : '<span class="badge badge-muted">進行中(早期請求)</span>';
@@ -587,7 +619,6 @@ export function renderInvoicesPage(root: HTMLElement) {
     if (!btn) return;
     const cycleStartMonth = btn.dataset.cycle!;
     const category = btn.dataset.category as BillingType;
-    if (!(await showConfirm(`${BILLING_TYPE_LABELS[category]}分の請求書をこの期間で作成します。よろしいですか?`))) return;
     await createInvoiceForCycle(earlyClientSelect.value, cycleStartMonth, todayMonth, category, true, 'early');
   });
 
@@ -1071,7 +1102,7 @@ function monthRowHtml(month: Invoice['months'][number], idx: number, ratioLabel:
   const { month: monthNumber } = parseYearMonth(month.yearMonth);
   return `
     <tr>
-      <td>${monthNumber}月分レンタル料</td>
+      <td>${monthNumber}月分レンタル料${month.endingCharge ? `（終了・${month.endingCharge === 'half' ? '半月' : '1か月'}）` : ''}</td>
       <td>${ratioLabel}</td>
       <td class="num">${formatYen(month.nonTaxableSubtotal)}</td>
       <td class="num">${formatYen(month.taxableSubtotal)}</td>
