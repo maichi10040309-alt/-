@@ -933,7 +933,7 @@ function invoiceSheetHtml(invoice: Invoice): string {
       <div class="inv-header-row">
         <div class="inv-recipient">
           <div class="inv-client-line">${escapeHtml(client?.name ?? '')}<span class="inv-sama">様</span></div>
-          ${company.bankInfo.trim() ? `<div class="inv-bank"><strong>お振込先</strong><div class="inv-bank-details">${escapeHtml(company.bankInfo.trim())}</div></div>` : ''}
+          ${company.bankInfo.trim() ? `<div class="inv-bank"><div class="inv-bank-details">${escapeHtml(company.bankInfo.trim())}</div></div>` : ''}
         </div>
         <div class="inv-meta">
           <div>発行日: ${issueDateLabel}</div>
