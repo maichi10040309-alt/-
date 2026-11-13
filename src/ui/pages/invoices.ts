@@ -79,7 +79,10 @@ async function printInvoiceBatch(invoices: Invoice[]) {
   document.querySelector('#invoice-batch-print')?.remove();
   const container = document.createElement('div');
   container.id = 'invoice-batch-print';
-  container.innerHTML = invoices.map(invoiceSheetHtml).join('');
+  const clientsById = new Map(store.getState().clients.map((client) => [client.id, client]));
+  const ordered = [...invoices].sort((a, b) =>
+    compareCustomerNumbers(clientsById.get(a.clientId), clientsById.get(b.clientId), 'asc'));
+  container.innerHTML = ordered.map(invoiceSheetHtml).join('');
   container.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
   document.body.append(container);
   document.body.classList.add('invoice-batch-printing');
