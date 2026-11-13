@@ -32,7 +32,7 @@ export function openCompanySettingsModal() {
         <input type="text" id="f-fax" value="${escapeAttr(company.fax)}" />
       </div>
       <div class="form-field full">
-        <label>振込先情報</label>
+        <label>振込先情報（請求書に印字されます）</label>
         <textarea id="f-bank">${escapeAttr(company.bankInfo)}</textarea>
       </div>
       <div class="form-field full">

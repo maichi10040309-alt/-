@@ -553,17 +553,32 @@ table.data-table {
 .inv-header-row {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 20px;
   flex-wrap: wrap;
   margin-bottom: 28px;
+}
+
+.inv-recipient {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inv-bank {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.inv-bank-details {
+  white-space: pre-line;
 }
 
 .inv-client-line {
   font-size: 21px;
   border-bottom: 2px solid var(--color-text);
   padding-bottom: 6px;
-  min-width: 180px;
 }
 
 .inv-client-line .inv-sama {
@@ -749,14 +764,12 @@ table.data-table {
     print-color-adjust: exact; -webkit-print-color-adjust: exact;
   }
   .inv-header-row { flex-wrap: nowrap; align-items: flex-start; }
-  .inv-client-line { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .inv-meta { max-width: 48%; overflow-wrap: anywhere; }
   .inv-table tr, .inv-debit-dates { break-inside: avoid; }
   .inv-note-input { color: #111; }
 }
 
 .invoice-measure-print .inv-header-row { flex-wrap: nowrap; align-items: flex-start; }
-.invoice-measure-print .inv-client-line { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .invoice-measure-print .inv-meta { max-width: 48%; overflow-wrap: anywhere; }
 
 .inv-note-print { display: none; white-space: pre-wrap; }

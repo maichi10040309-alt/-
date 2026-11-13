@@ -931,7 +931,10 @@ function invoiceSheetHtml(invoice: Invoice): string {
     <div class="invoice-sheet" id="invoice-sheet">
       <h2 class="inv-title">請求書${invoice.billingCategory !== 'combined' ? `<span class="inv-category-badge no-print">(${INVOICE_BILLING_CATEGORY_LABELS[invoice.billingCategory]})</span>` : ''}</h2>
       <div class="inv-header-row">
-        <div class="inv-client-line">${escapeHtml(client?.name ?? '')}<span class="inv-sama">様</span></div>
+        <div class="inv-recipient">
+          <div class="inv-client-line">${escapeHtml(client?.name ?? '')}<span class="inv-sama">様</span></div>
+          ${company.bankInfo.trim() ? `<div class="inv-bank"><strong>お振込先</strong><div class="inv-bank-details">${escapeHtml(company.bankInfo.trim())}</div></div>` : ''}
+        </div>
         <div class="inv-meta">
           <div>発行日: ${issueDateLabel}</div>
           <div class="inv-company-signature">
@@ -984,12 +987,6 @@ function invoiceSheetHtml(invoice: Invoice): string {
         <div><span>次回引落日</span><strong>${formatDateJapanese(debitDates.next)}</strong></div>
       </div>`}
       <p class="inv-footer">ご不明な点等ございましたら、ご連絡頂きますようお願い致します。</p>
-
-      ${
-        company.bankInfo
-          ? `<div class="card no-print" style="margin-top:20px"><h3 class="card-title">お振込先(社内メモ・印刷されません)</h3><div style="white-space:pre-line">${escapeHtml(company.bankInfo)}</div></div>`
-          : ''
-      }
 
       <details class="inv-detail-toggle no-print">
         <summary>品目明細を表示(社内確認用・印刷されません)</summary>
